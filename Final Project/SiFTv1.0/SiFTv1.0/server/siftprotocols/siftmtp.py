@@ -128,8 +128,8 @@ class SiFT_MTP:
 		# except SiFT_MTP_Error as e:
 		# 	TODO
 		# TODO
-		try:
-			msg_body = self.receive_bytes()
+		# try:
+		# 	msg_body = self.receive_bytes()
 		# DEBUG 
 		if self.DEBUG:
 			print('MTP message received (' + str(msg_len) + '):')

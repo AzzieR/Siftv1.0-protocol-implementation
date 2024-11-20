@@ -1,9 +1,56 @@
 #python3
 
-import sys, threading, socket, getpass
+import os, sys, threading, socket, getpass
 from siftprotocols.siftmtp import SiFT_MTP, SiFT_MTP_Error
 from siftprotocols.siftlogin import SiFT_LOGIN, SiFT_LOGIN_Error
 from siftprotocols.siftcmd import SiFT_CMD, SiFT_CMD_Error
+
+from Crypto.PublicKey import RSA
+"""
+Server's RSA Implementation
+"""
+def save_publickey(pubkey, pubkeyfile):
+    with open(pubkeyfile, 'wb') as f:
+        f.write(pubkey.export_key(format='PEM'))
+
+def load_publickey(pubkeyfile):
+    with open(pubkeyfile, 'rb') as f:
+        pubkeystr = f.read()
+    try:
+        return RSA.import_key(pubkeystr)
+    except ValueError:
+        print('Error: Cannot import public key from file ' + pubkeyfile)
+        sys.exit(1)
+
+def save_keypair(keypair, privkeyfile):
+    passphrase = getpass.getpass('Enter a passphrase to protect the saved private key: ')
+    with open(privkeyfile, 'wb') as f:
+        f.write(keypair.export_key(format='PEM', passphrase=passphrase))
+
+def load_keypair(privkeyfile):
+    passphrase = getpass.getpass('Enter a passphrase to decode the saved private key: ')
+    with open(privkeyfile, 'rb') as f:
+        keypairstr = f.read()
+    try:
+        return RSA.import_key(keypairstr, passphrase=passphrase)
+    except ValueError:
+        print('Error: Cannot import private key from file ' + privkeyfile)
+        sys.exit(1)
+
+def generate_keypair(pubkeyfile, privkeyfile):
+    if os.path.exists(pubkeyfile) and os.path.exists(privkeyfile):
+        print('Key pair already exists. Skipping key generation.')
+        return
+
+    print('Generating a new 2048-bit RSA key pair...')
+    keypair = RSA.generate(2048)
+    save_publickey(keypair.publickey(), pubkeyfile)
+    save_keypair(keypair, privkeyfile)
+    print('Done.')
+
+# Example usage
+pubkeyfile = 'server_pubkey.pem'
+privkeyfile = 'server_keypair.pem'
 
 class Server:
     def __init__(self):
@@ -76,8 +123,10 @@ class Server:
                 print('Closing connection with client on ' + addr[0] + ':' + str(addr[1]))
                 client_socket.close()
                 return
-
+def newline(s):
+    return s + b'\n'
 
 # main
 if __name__ == '__main__':
+    generate_keypair(pubkeyfile, privkeyfile)
     server = Server()
