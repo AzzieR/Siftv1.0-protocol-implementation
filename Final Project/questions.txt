@@ -1,0 +1,25 @@
+How do you split a file into fragments for upload?
+For v1.0:  MTP uses symmetric key cryptographic primitives, which require secret keys shared between the client and the server
+This means the cryptog primitives uses block or stream cipher encryption
+And the key has to be shared between the client and the server
+The key is made during the login session and authenticated for future use
+Login protocol establishes the secret key
+Does the shared secret key change for every login session of the same user?
+More specifically, SiFT v1.0 MTP uses AES in GCM mode, which provides encryption, integrity protection, and origin authentication of messages
+
+The header is followed by the AES-GCM enrcrypted payload (__epd__) and the AES-GCM authentication tag (__mac__). The mac field in this version of the protocol must be 12 bytes long. 
+what does v1 have that v0.5 doesn't?
+Mac, enc_payload in AES-GCM mode, rnd 6-byte fresh random value
+sqn which is the message sequence numebr starting from 1
+Temporarykey in the 1st login request instance
+
+So the payload of the login req is encrypted using AES-GCM and produces an authentication tag which i believe is the MAC value
+The login request 
+The tk has to be encrypted using RSA-OAEP and the public key of the server
+So I need the server's public key
+I think the authentication tag is the mac value
+
+I need to decrypt the etk using the server's private key and RSA-OAEP(same enc method)
+Does that have to be implemented?
+
+Ok the random_bytes generated from the client and server
