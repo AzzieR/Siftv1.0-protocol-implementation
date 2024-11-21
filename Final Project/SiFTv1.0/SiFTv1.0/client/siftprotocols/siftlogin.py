@@ -148,7 +148,7 @@ class SiFT_LOGIN:
         print(f"the msg payload: {msg_payload}")
 
         # DEBUG 
-        if self.DEBUG:
+        if self.DEBUG: # TODO Should we take out this print statements
             print('Outgoing payload from client: (' + str(len(msg_payload)) + '):')
             print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
             print('------------------------------------------')

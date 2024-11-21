@@ -107,11 +107,11 @@ class SiFT_LOGIN:
         hash_fn.update(msg_payload)
         request_hash = hash_fn.digest()
         server_random = get_random_bytes(16) #added the server random needed for the permanent key
-# TODO Decrypt the msg body
+        # TODO Decrypt the msg body
 
         login_req_struct = self.parse_login_req(msg_payload)
-# TODO Decrypt the msg body
-# TODO ADD VERIFICATION FRO THE CLIENT RANDOM AND TIMESTAMP
+        # TODO Decrypt the msg body
+        # TODO ADD VERIFICATION FRO THE CLIENT RANDOM AND TIMESTAMP
         # checking username and password
         if login_req_struct['username'] in self.server_users:
             if not self.check_password(login_req_struct['password'], self.server_users[login_req_struct['username']]):

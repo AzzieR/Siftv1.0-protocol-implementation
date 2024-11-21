@@ -25,6 +25,7 @@ class SiFT_MTP:
 		self.size_msg_hdr_rnd = 6
 		self.size_msg_hdr_rsv = 2
 		self.msg_mac_len = 12
+		self.etk_size = 256
 		self.aes_key = get_random_bytes(16)#### typically is 16, but could be changed
 
 		self.type_login_req =    b'\x00\x00'
@@ -57,7 +58,7 @@ class SiFT_MTP:
 		parsed_msg_hdr['len'], i = msg_hdr[i:i+self.size_msg_hdr_len], i+self.size_msg_hdr_len
 		parsed_msg_hdr['sqn'], i = msg_hdr[i:i+self.size_msg_hdr_sqn], i+self.size_msg_hdr_sqn
 		parsed_msg_hdr['rnd'], i = msg_hdr[i:i+self.size_msg_hdr_rnd], i+self.size_msg_hdr_rnd
-		parsed_msg_hdr['rsv']= msg_hdr[i:i+self.size_msg_hdr_rsv]
+		parsed_msg_hdr['rsv'], i = msg_hdr[i:i+self.size_msg_hdr_rsv], i+self.size_msg_hdr_rsv
 		print(len(parsed_msg_hdr))	
 		print(f"the parsed_msg_hdr in sever: {parsed_msg_hdr}")
 		return parsed_msg_hdr
@@ -110,27 +111,34 @@ class SiFT_MTP:
 
 		# msg_len is the length of the entire msg including hdr, mac and tmp key
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
-
-		try:
-			msg_body = self.receive_bytes(msg_len - self.size_msg_hdr) #TODO: Update this once the mac and etk has been added
-			# it will be msg_len - self.size_msg_hdr - macsize - etksize
-		except SiFT_MTP_Error as e:
-			raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
+		msg_type = parsed_msg_hdr['typ']
+		if msg_type == self.type_login_req:
+			try:
+				print
+				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len - self.etk_size)
+				print(f"MSG LEN: {msg_len}")
+				print(f"acc msg body len: {len(msg_body)}")
+				mac = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_hdr_len - self.etk_size) # get mac
+				etk = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_hdr_len - self.msg_mac_len) # get the etk
+				print(f"the mac received: {len(mac)}")
+				print(f"the etk received after: {len(etk)}")
+			except SiFT_MTP_Error as e:
+				raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
+		else:
+			try:
+				print(f"MSG LEN: {msg_len}")
+				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr)
+			except SiFT_MTP_Error as e:
+				raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
 
 		# TODO THIS DEPENDS ON IF THE MSG TYPE IS A LOGIN REQUEST!
-		# Try to receive the mac
-		# try:
-		# except SiFT_MTP_Error as e:
-		# 	TODO
-		# TODO
-		# Try to receive the etk
-		# try:
-		# except SiFT_MTP_Error as e:
-		# 	TODO
-		# TODO
-		# try:
-		# 	msg_body = self.receive_bytes()
-		# DEBUG 
+		# Decrypt the message by decrypting the etk with the server's private key to obtain the tk
+		# With tk, we verify the mac
+		# then decrypt the epd\
+		# verify the user is within the user
+		# verify the password hash is the same as the user password hash stored
+		# verify the timestamp is fresh
+		# verify the client random is 32 bytes
 		if self.DEBUG:
 			print('MTP message received (' + str(msg_len) + '):')
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
@@ -138,11 +146,15 @@ class SiFT_MTP:
 			print(msg_body.hex())
 			print('------------------------------------------')
 		# DEBUG 
-
-		if len(msg_body) != msg_len - self.size_msg_hdr: #TODO Update when mac and etk is added
-			raise SiFT_MTP_Error('Incomplete message body reveived')
+		if msg_type == self.type_login_req:
+			if len(msg_body) != msg_len - self.size_msg_hdr - self.etk_size - self.msg_mac_len: #TODO Update when mac and etk is added
+				raise SiFT_MTP_Error('Incomplete message body reveived')
+			return parsed_msg_hdr['typ'], parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd'], parsed_msg_hdr['rsv'], msg_body
+		else:
+			if len(msg_body) != msg_len - self.size_msg_hdr: #TODO Update when mac and etk is added
+				raise SiFT_MTP_Error('Incomplete message body reveived')
+			return parsed_msg_hdr['typ'], msg_body
 		# adding the msg rnd, sqn and rsv
-		return parsed_msg_hdr['typ'], parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd'], parsed_msg_hdr['rsv'], msg_body
 
 
 	# sends all bytes provided via the peer socket
