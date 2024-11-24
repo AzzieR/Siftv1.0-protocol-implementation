@@ -1,13 +1,50 @@
-#python3
-
-import time
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+import time, sys, os, getpass
 from Crypto.Hash import SHA256
 from Crypto.Protocol.KDF import PBKDF2
 from siftprotocols.siftmtp import SiFT_MTP, SiFT_MTP_Error
 from Crypto.Random import get_random_bytes
+from Crypto.Cipher import AES
 
+def load_privatekey():
+    privkeyfile = input('Enter the full path to the private key file: ')
+    passphrase = getpass.getpass('Enter passphrase for private key: ')
+    with open(privkeyfile, 'rb') as f:
+        privkeystr = f.read()
+    try:
+        return RSA.import_key(privkeystr, passphrase=passphrase)
+    except ValueError as e:
+        print(f'Error: Cannot import private key from file {privkeyfile} : {e}')
+        sys.exit(1)
 
+def decrypt_etk_with_private_key(encrypted_key):
+    # Load the server's private key
+    private_key = load_privatekey()
 
+    # Decrypt the encrypted temporary key using RSA-OAEP
+    cipher_rsa = PKCS1_OAEP.new(private_key)
+    decrypted_key = cipher_rsa.decrypt(encrypted_key)
+
+    return decrypted_key
+
+def decrypt_and_verify_payload(payload, tk, rnd, sqn, mac):
+    # combine rnd and sqn to generate the nonce
+    nonce = rnd + sqn
+
+    # create AES cipher in GCM mode
+    cipher = AES.new(tk, AES.MODE_GCM, nonce=nonce, mac_len = 12)
+    try:
+        # decrypt and verify the mac
+        c_mac = cipher.verify(mac)
+    except ValueError:
+        raise ValueError("MAC verification failed")
+
+    try:
+        decrypted_payload = cipher.decrypt(payload)
+        return decrypt_and_verify_payload
+    except ValueError:
+        raise ValueError("Failed to decrypt the payload")
 class SiFT_LOGIN_Error(Exception):
 
     def __init__(self, err_msg):
@@ -81,19 +118,19 @@ class SiFT_LOGIN:
 
         if not self.server_users:
             raise SiFT_LOGIN_Error('User database is required for handling login at server')
-
+        print("entered the server's handling of login")
         # trying to receive a login request
         try:
-            msg_type, msg_sqn, msg_rnd, msg_rsv, msg_payload = self.mtp.receive_msg() # add the new patameters
+            msg_type, msg_sqn, msg_rnd, msg_rsv, msg_payload, mac, etk = self.mtp.receive_msg() # add the new patameters
             # TODO add the mac and the etk
         except SiFT_MTP_Error as e:
             raise SiFT_LOGIN_Error('Unable to receive login request --> ' + e.err_msg)
-
+        print("successfully captured all needed params")
         # DEBUG 
         if self.DEBUG:
             print(f"Incoming: {msg_payload}")
             print('Incoming payload (' + str(len(msg_payload)) + '):')
-            print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
+            #print(msg_payload[:max(512, len(msg_payload))].decode('utf-8')) # the payload is encrypted here so cannot be decoded so should take out
             print('------------------------------------------')
         # DEBUG 
 
@@ -107,10 +144,15 @@ class SiFT_LOGIN:
         hash_fn.update(msg_payload)
         request_hash = hash_fn.digest()
         server_random = get_random_bytes(16) #added the server random needed for the permanent key
-        # TODO Decrypt the msg body
-
+        # TODO VERIFY THE args
+        # TODO: Dec the payload
+        # decrypt the etk using server's private key and RSA-OAEP in enc mode
+        # get the file path
+        # privkeyfile_path = os.path.join(os.path.dirname(__file__), '..', 'server_keypair.pem')
+        tk = decrypt_etk_with_private_key(etk)
+        print(f"the tk: {tk}")
         login_req_struct = self.parse_login_req(msg_payload)
-        # TODO Decrypt the msg body
+
         # TODO ADD VERIFICATION FRO THE CLIENT RANDOM AND TIMESTAMP
         # checking username and password
         if login_req_struct['username'] in self.server_users:

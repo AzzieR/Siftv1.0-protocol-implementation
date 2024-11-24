@@ -16,7 +16,7 @@ class SiFT_MTP:
 		self.version_major = 1
 		self.version_minor = 0
 		self.msg_hdr_ver = b'\x01\x00'
-		self.size_msg_hdr = 16
+		self.size_msg_hdr = 16 # the size of the header
 		self.size_msg_hdr_ver = 2
 		self.size_msg_hdr_typ = 2
 		self.size_msg_hdr_len = 2	
@@ -114,12 +114,21 @@ class SiFT_MTP:
 		msg_type = parsed_msg_hdr['typ']
 		if msg_type == self.type_login_req:
 			try:
-				print
 				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len - self.etk_size)
 				print(f"MSG LEN: {msg_len}")
 				print(f"acc msg body len: {len(msg_body)}")
-				mac = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_hdr_len - self.etk_size) # get mac
-				etk = self.receive_bytes(msg_len - self.size_msg_hdr - self.size_msg_hdr_len - self.msg_mac_len) # get the etk
+				print("hello bfr mac")
+				lth = len(msg_body)
+				print(lth)
+				print(self.size_msg_hdr)
+				print(self.etk_size)
+				mac = self.receive_bytes(msg_len - self.size_msg_hdr - lth - self.etk_size) # get mac
+				print(f"left: {msg_len - lth - self.size_msg_hdr - self.etk_size}")
+				print("hello after mac")
+				print(mac)
+				etk = self.receive_bytes(msg_len - self.size_msg_hdr - lth - self.msg_mac_len) # get the etk
+				print(etk)
+				print("hello after etk")
 				print(f"the mac received: {len(mac)}")
 				print(f"the etk received after: {len(etk)}")
 			except SiFT_MTP_Error as e:
@@ -130,15 +139,7 @@ class SiFT_MTP:
 				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr)
 			except SiFT_MTP_Error as e:
 				raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
-
-		# TODO THIS DEPENDS ON IF THE MSG TYPE IS A LOGIN REQUEST!
-		# Decrypt the message by decrypting the etk with the server's private key to obtain the tk
-		# With tk, we verify the mac
-		# then decrypt the epd\
-		# verify the user is within the user
-		# verify the password hash is the same as the user password hash stored
-		# verify the timestamp is fresh
-		# verify the client random is 32 bytes
+		# TODO: confirm verification checks
 		if self.DEBUG:
 			print('MTP message received (' + str(msg_len) + '):')
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
@@ -149,7 +150,8 @@ class SiFT_MTP:
 		if msg_type == self.type_login_req:
 			if len(msg_body) != msg_len - self.size_msg_hdr - self.etk_size - self.msg_mac_len: #TODO Update when mac and etk is added
 				raise SiFT_MTP_Error('Incomplete message body reveived')
-			return parsed_msg_hdr['typ'], parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd'], parsed_msg_hdr['rsv'], msg_body
+			print("the message body received is complete")
+			return parsed_msg_hdr['typ'], parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd'], parsed_msg_hdr['rsv'], msg_body, mac, etk
 		else:
 			if len(msg_body) != msg_len - self.size_msg_hdr: #TODO Update when mac and etk is added
 				raise SiFT_MTP_Error('Incomplete message body reveived')
