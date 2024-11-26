@@ -30,21 +30,22 @@ def decrypt_etk_with_private_key(encrypted_key):
     decrypted_key = cipher_rsa.decrypt(encrypted_key)
     return decrypted_key
 
-def decrypt_and_verify_payload(payload, tk, rnd, sqn, mac):
+def decrypt_and_verify_payload(payload, rnd, sqn, tk, mac):
     # combine rnd and sqn to generate the nonce
     nonce = rnd + sqn
 
     # create AES cipher in GCM mode
-    cipher = AES.new(tk, AES.MODE_GCM, nonce=nonce, mac_len = 12)
+    cipher = AES.new(tk, AES.MODE_GCM, nonce=rnd+sqn, mac_len = 12)
     try:
         # decrypt and verify the mac
         c_mac = cipher.verify(mac)
-    except ValueError:
-        raise ValueError("MAC verification failed")
+    except ValueError as e:
+        print(f"the issue: {e}")
+        raise ValueError(f"MAC verification failed; {e}")
 
     try:
         decrypted_payload = cipher.decrypt(payload)
-        return decrypt_and_verify_payload
+        return decrypted_payload
     except ValueError:
         raise ValueError("Failed to decrypt the payload")
 class SiFT_LOGIN_Error(Exception):
@@ -124,6 +125,7 @@ class SiFT_LOGIN:
         # trying to receive a login request
         try:
             msg_type, msg_sqn, msg_rnd, msg_rsv, msg_payload, mac, etk = self.mtp.receive_msg() # add the new patameters
+            print(f"the mac after handling: {mac}")
             # TODO add the mac and the etk
         except SiFT_MTP_Error as e:
             raise SiFT_LOGIN_Error('Unable to receive login request --> ' + e.err_msg)
@@ -154,46 +156,51 @@ class SiFT_LOGIN:
         print(f"the etk: {etk}")
         tk = decrypt_etk_with_private_key(etk)
         print(f"the tk: {tk}")
-        login_req_struct = self.parse_login_req(msg_payload)
 
-        # TODO ADD VERIFICATION FRO THE CLIENT RANDOM AND TIMESTAMP
-        # checking username and password
-        if login_req_struct['username'] in self.server_users:
-            if not self.check_password(login_req_struct['password'], self.server_users[login_req_struct['username']]):
-                raise SiFT_LOGIN_Error('Password verification failed')
-        else:
-            raise SiFT_LOGIN_Error('Unkown user attempted to log in')
+        # then decrypt the payload
 
-        # building login response
-        login_res_struct = {}
-        # adding the server random bytes to the server login response
-        server_random = get_random_bytes(16)
-        login_res_struct['request_hash'] = request_hash
-        login_res_struct['server_random'] = server_random
-        # TODO: Should the login responses be encrypted?
-        msg_payload = self.build_login_res(login_res_struct)
+        decrypted_payload = decrypt_and_verify_payload(msg_payload, msg_rnd, msg_sqn, tk, mac)
+        print(f"the dec payload: {decrypted_payload}")
+        # login_req_struct = self.parse_login_req(msg_payload)
 
-        # DEBUG 
-        if self.DEBUG:
-            print('Outgoing payload from server login (' + str(len(msg_payload)) + '):') # this returns an error because for some reason the message is just 7 bytes and not 9
-            print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
-            print('------------------------------------------')
-        # DEBUG 
+        # # TODO ADD VERIFICATION FRO THE CLIENT RANDOM AND TIMESTAMP
+        # # checking username and password
+        # if login_req_struct['username'] in self.server_users:
+        #     if not self.check_password(login_req_struct['password'], self.server_users[login_req_struct['username']]):
+        #         raise SiFT_LOGIN_Error('Password verification failed')
+        # else:
+        #     raise SiFT_LOGIN_Error('Unkown user attempted to log in')
 
-        # sending login response
-        # TODO: Shou;d we send the client's own details back to the client in this send_msg
-        # TODO: The send should inclde the login response tye and msg_payload
-        try: # should the login response include the header?
-            self.mtp.send_msg(self.mtp.type_login_res, msg_sqn, msg_rnd, msg_rsv, msg_payload)
-        except SiFT_MTP_Error as e:
-            raise SiFT_LOGIN_Error('Unable to send login response --> ' + e.err_msg)
+        # # building login response
+        # login_res_struct = {}
+        # # adding the server random bytes to the server login response
+        # server_random = get_random_bytes(16)
+        # login_res_struct['request_hash'] = request_hash
+        # login_res_struct['server_random'] = server_random
+        # # TODO: Should the login responses be encrypted?
+        # msg_payload = self.build_login_res(login_res_struct)
 
-        # DEBUG 
-        if self.DEBUG:
-            print('User ' + login_req_struct['username'] + ' logged in')
-        # DEBUG 
+        # # DEBUG 
+        # if self.DEBUG:
+        #     print('Outgoing payload from server login (' + str(len(msg_payload)) + '):') # this returns an error because for some reason the message is just 7 bytes and not 9
+        #     print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
+        #     print('------------------------------------------')
+        # # DEBUG 
 
-        return login_req_struct['username']
+        # # sending login response
+        # # TODO: Shou;d we send the client's own details back to the client in this send_msg
+        # # TODO: The send should inclde the login response tye and msg_payload
+        # try: # should the login response include the header?
+        #     self.mtp.send_msg(self.mtp.type_login_res, msg_sqn, msg_rnd, msg_rsv, msg_payload)
+        # except SiFT_MTP_Error as e:
+        #     raise SiFT_LOGIN_Error('Unable to send login response --> ' + e.err_msg)
+
+        # # DEBUG 
+        # if self.DEBUG:
+        #     print('User ' + login_req_struct['username'] + ' logged in')
+        # # DEBUG 
+
+        # return login_req_struct['username']
 
 
     # handles login process (to be used by the client)

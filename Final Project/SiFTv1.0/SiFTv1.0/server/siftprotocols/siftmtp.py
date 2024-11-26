@@ -151,6 +151,7 @@ class SiFT_MTP:
 			if len(msg_body) != msg_len - self.size_msg_hdr - self.etk_size - self.msg_mac_len: #TODO Update when mac and etk is added
 				raise SiFT_MTP_Error('Incomplete message body reveived')
 			print("the message body received is complete")
+			print(f"the mac to be sent to the handle_login_server: {mac}")
 			return parsed_msg_hdr['typ'], parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd'], parsed_msg_hdr['rsv'], msg_body, mac, etk
 		else:
 			if len(msg_body) != msg_len - self.size_msg_hdr: #TODO Update when mac and etk is added
