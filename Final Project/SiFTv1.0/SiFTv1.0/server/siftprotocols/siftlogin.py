@@ -79,7 +79,7 @@ class SiFT_LOGIN:
         return login_req_str.encode(self.coding)
 
 
-    # parses a login request into a dictionary
+    # CHANGE THIS PROBABLY TO THE OLD VERSION
     def parse_login_req(self, login_req):
 # TODO ADD DECRYPTION
         login_req_fields = login_req.decode(self.coding).split(self.delimiter)
@@ -88,6 +88,7 @@ class SiFT_LOGIN:
         login_req_struct['username'] = login_req_fields[1]
         login_req_struct['password'] = login_req_fields[2]
         login_req_struct['client_random'] = login_req_fields[3]
+        print(f"the login req struct: {login_req_struct}")
         return login_req_struct
 
 
@@ -160,7 +161,8 @@ class SiFT_LOGIN:
 
         decrypted_payload = decrypt_and_verify_payload(msg_payload, msg_rnd, msg_sqn, tk, mac)
         print(f"the dec payload: {decrypted_payload}")
-        # login_req_struct = self.parse_login_req(msg_payload)
+        login_req_struct = self.parse_login_req(decrypted_payload)
+        print(f"returned login req struct from client: {login_req_struct}")
 
         # # TODO ADD VERIFICATION FRO THE CLIENT RANDOM AND TIMESTAMP
         # # checking username and password
