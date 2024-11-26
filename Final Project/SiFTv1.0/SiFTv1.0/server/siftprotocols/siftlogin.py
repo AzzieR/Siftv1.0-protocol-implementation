@@ -38,16 +38,15 @@ def decrypt_and_verify_payload(payload, rnd, sqn, tk, mac):
     cipher = AES.new(tk, AES.MODE_GCM, nonce=rnd+sqn, mac_len = 12)
     try:
         # decrypt and verify the mac
-        c_mac = cipher.verify(mac)
+        decrypted_payload = cipher.decrypt(payload)
+        
+        # Verify the MAC
+        cipher.verify(mac)
+        print(f'the dec payload: {decrypted_payload}')
+        return decrypted_payload
     except ValueError as e:
         print(f"the issue: {e}")
         raise ValueError(f"MAC verification failed; {e}")
-
-    try:
-        decrypted_payload = cipher.decrypt(payload)
-        return decrypted_payload
-    except ValueError:
-        raise ValueError("Failed to decrypt the payload")
 class SiFT_LOGIN_Error(Exception):
 
     def __init__(self, err_msg):
