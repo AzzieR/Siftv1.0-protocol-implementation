@@ -11,7 +11,7 @@ Server's RSA Implementation
 """
 def save_publickey(pubkey, pubkeyfile):
     with open(pubkeyfile, 'wb') as f:
-        f.write(pubkey.export_key(format='PEM'))
+        f.write(pubkey.export_key(format='PEM', passphrase =None))
 
 def load_publickey(pubkeyfile):
     with open(pubkeyfile, 'rb') as f:
@@ -25,7 +25,7 @@ def load_publickey(pubkeyfile):
 def save_keypair(keypair, privkeyfile):
     passphrase = getpass.getpass('Enter a passphrase to protect the saved private key: ')
     with open(privkeyfile, 'wb') as f:
-        f.write(keypair.export_key(format='PEM', passphrase=passphrase))
+        f.write(keypair.export_key(format='PEM', passphrase=None))
 
 def load_keypair(privkeyfile):
     passphrase = getpass.getpass('Enter a passphrase to decode the saved private key: ')

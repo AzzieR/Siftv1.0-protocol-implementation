@@ -38,7 +38,7 @@ def encrypt_key_with_public_key(pubkeyfile, random_key):
 
 def encrypt_payload(payload, temp_key, rnd, sqn):
     # Create AES cipher in GCM mode
-    cipher_aes = AES.new(temp_key, AES.MODE_GCM, nonce=rnd+sqn)
+    cipher_aes = AES.new(temp_key, AES.MODE_GCM, nonce=rnd+sqn, mac_len=12)
     ciphertext, tag = cipher_aes.encrypt_and_digest(payload)
     return ciphertext, tag
 # print(encrypt_key_with_public_key("server_pubkey.pem"))
