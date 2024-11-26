@@ -164,44 +164,42 @@ class SiFT_LOGIN:
         login_req_struct = self.parse_login_req(decrypted_payload)
         print(f"returned login req struct from client: {login_req_struct}")
 
-        # # TODO ADD VERIFICATION FRO THE CLIENT RANDOM AND TIMESTAMP
-        # # checking username and password
-        # if login_req_struct['username'] in self.server_users:
-        #     if not self.check_password(login_req_struct['password'], self.server_users[login_req_struct['username']]):
-        #         raise SiFT_LOGIN_Error('Password verification failed')
-        # else:
-        #     raise SiFT_LOGIN_Error('Unkown user attempted to log in')
+        # TODO ADD VERIFICATION FRO THE CLIENT RANDOM AND TIMESTAMP
+        # checking username and password
+        if login_req_struct['username'] in self.server_users:
+            if not self.check_password(login_req_struct['password'], self.server_users[login_req_struct['username']]):
+                raise SiFT_LOGIN_Error('Password verification failed')
+        else:
+            raise SiFT_LOGIN_Error('Unkown user attempted to log in')
 
-        # # building login response
-        # login_res_struct = {}
-        # # adding the server random bytes to the server login response
-        # server_random = get_random_bytes(16)
-        # login_res_struct['request_hash'] = request_hash
-        # login_res_struct['server_random'] = server_random
-        # # TODO: Should the login responses be encrypted?
-        # msg_payload = self.build_login_res(login_res_struct)
+        # building login response
+        login_res_struct = {}
+        # adding the server random bytes to the server login response
+        server_random = get_random_bytes(16)
+        login_res_struct['request_hash'] = request_hash
+        login_res_struct['server_random'] = server_random
+        # TODO: Should the login responses be encrypted?
+        msg_res_payload = self.build_login_res(login_res_struct)
 
-        # # DEBUG 
-        # if self.DEBUG:
-        #     print('Outgoing payload from server login (' + str(len(msg_payload)) + '):') # this returns an error because for some reason the message is just 7 bytes and not 9
-        #     print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
-        #     print('------------------------------------------')
-        # # DEBUG 
+        # DEBUG 
+        if self.DEBUG:
+            print('Outgoing payload from server login (' + str(len(msg_payload)) + '):') # this returns an error because for some reason the message is just 7 bytes and not 9
+            print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
+            print('------------------------------------------')
+        # DEBUG 
+        # sending login response
+        # TODO: Shou;d we send the client's own details back to the client in this send_msg
+        # TODO: The send should inclde the login response tye and msg_payload
+        try: # should the login response include the header?
+            self.mtp.send_msg(self.mtp.type_login_res, msg_payload)
+        except SiFT_MTP_Error as e:
+            raise SiFT_LOGIN_Error('Unable to send login response --> ' + e.err_msg)
 
-        # # sending login response
-        # # TODO: Shou;d we send the client's own details back to the client in this send_msg
-        # # TODO: The send should inclde the login response tye and msg_payload
-        # try: # should the login response include the header?
-        #     self.mtp.send_msg(self.mtp.type_login_res, msg_sqn, msg_rnd, msg_rsv, msg_payload)
-        # except SiFT_MTP_Error as e:
-        #     raise SiFT_LOGIN_Error('Unable to send login response --> ' + e.err_msg)
-
-        # # DEBUG 
-        # if self.DEBUG:
-        #     print('User ' + login_req_struct['username'] + ' logged in')
-        # # DEBUG 
-
-        # return login_req_struct['username']
+        # DEBUG 
+        if self.DEBUG:
+            print('User ' + login_req_struct['username'] + ' logged in')
+        # DEBUG 
+        return login_req_struct['username']
 
 
     # handles login process (to be used by the client)
