@@ -125,7 +125,7 @@ class SiFT_MTP:
 				mac = self.receive_bytes(msg_len - self.size_msg_hdr - lth - self.etk_size) # get mac
 				print(f"left: {msg_len - lth - self.size_msg_hdr - self.etk_size}")
 				print("hello after mac")
-				print(mac)
+				print(mac.hex())
 				etk = self.receive_bytes(msg_len - self.size_msg_hdr - lth - self.msg_mac_len) # get the etk
 				print(etk)
 				print("hello after etk")

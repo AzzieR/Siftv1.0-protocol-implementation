@@ -17,15 +17,17 @@ def load_privatekey():
     except ValueError as e:
         print(f'Error: Cannot import private key from file {privkeyfile} : {e}')
         sys.exit(1)
+    except Exception as e:
+        print(f'Unexpected error: {e}')
+        sys.exit(1)
 
 def decrypt_etk_with_private_key(encrypted_key):
     # Load the server's private key
     private_key = load_privatekey()
-
+    print(f"the private key: {private_key}")
     # Decrypt the encrypted temporary key using RSA-OAEP
     cipher_rsa = PKCS1_OAEP.new(private_key)
     decrypted_key = cipher_rsa.decrypt(encrypted_key)
-
     return decrypted_key
 
 def decrypt_and_verify_payload(payload, tk, rnd, sqn, mac):
@@ -149,6 +151,7 @@ class SiFT_LOGIN:
         # decrypt the etk using server's private key and RSA-OAEP in enc mode
         # get the file path
         # privkeyfile_path = os.path.join(os.path.dirname(__file__), '..', 'server_keypair.pem')
+        print(f"the etk: {etk}")
         tk = decrypt_etk_with_private_key(etk)
         print(f"the tk: {tk}")
         login_req_struct = self.parse_login_req(msg_payload)
