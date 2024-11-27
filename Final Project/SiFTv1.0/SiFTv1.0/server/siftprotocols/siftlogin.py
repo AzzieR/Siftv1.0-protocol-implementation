@@ -184,7 +184,7 @@ class SiFT_LOGIN:
                 'server_random': server_random,
             }
             msg_res_payload = self.build_login_res(login_res_struct)
-            self.mtp.send_msg(self.mtp.type_login_res, msg_res_payload)
+            self.mtp.send_msg(self.mtp.type_login_res, msg_res_payload, msg_rnd, msg_rsv, msg_payload)
 
         except Exception as e:
             print(f"Error occurred during login handling: {e}")
@@ -216,8 +216,9 @@ class SiFT_LOGIN:
         # DEBUG 
 
         # trying to send login request
+        msg_rnd = self.mtp.get_random()
         try:
-            self.mtp.send_msg(self.mtp.type_login_req, msg_payload)
+            self.mtp.send_msg(self.mtp.type_login_req, msg_payload, client_random, msg_rnd ,msg_payload )
         except SiFT_MTP_Error as e:
             raise SiFT_LOGIN_Error('Unable to send login request --> ' + e.err_msg)
 

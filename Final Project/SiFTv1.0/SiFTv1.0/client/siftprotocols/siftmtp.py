@@ -117,6 +117,7 @@ class SiFT_MTP:
 
 	# receives and parses message, returns msg_type and msg_payload
 	def receive_msg(self):
+		mac = None
 		try:
 			msg_hdr = self.receive_bytes(self.size_msg_hdr)
 		except SiFT_MTP_Error as e:
@@ -170,7 +171,7 @@ class SiFT_MTP:
 			if (mac):
 				print('MAC (' + str(len(mac)) + '): ' + mac.hex())
 			# print('Decrypted Payload: ' + decrypted_payload)
-			print('MSG RESPONSE FROM SERVER PAYLOAd: '+msg_body) # dis shld include the serverrandom sand request hash
+			print('MSG RESPONSE FROM SERVER PAYLOAd: '+ str(msg_body)) # dis shld include the serverrandom sand request hash
 			# should that be encrypted
 			print('------------------------------------------')
 		# DEBUG 
