@@ -2,7 +2,19 @@
 
 from os import urandom
 import socket
+## Added imports
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Random import get_random_bytes
+import base64, sys
 
+def encrypt_payload(payload, temp_key, rnd, sqn):
+    # Create AES cipher in GCM mode
+		cipher_aes = AES.new(temp_key, AES.MODE_GCM, nonce=rnd+sqn, mac_len=12)
+		ciphertext, tag = cipher_aes.encrypt_and_digest(payload)
+		return ciphertext, tag
 class SiFT_MTP_Error(Exception):
 
     def __init__(self, err_msg):
@@ -21,6 +33,7 @@ class SiFT_MTP:
 		self.size_msg_hdr_typ = 2
 		self.size_msg_hdr_len = 2	
 		# Additionals for v1.0
+		self.sequence_counter = 1
 		self.size_msg_hdr_sqn = 2
 		self.size_msg_hdr_rnd = 6
 		self.size_msg_hdr_rsv = 2
@@ -167,21 +180,36 @@ class SiFT_MTP:
 		except:
 			raise SiFT_MTP_Error('Unable to send via peer socket')
 
-
+	
 	# builds and sends message of a given type using the provided payload
 	# added the new header params to the send_msg
-	def send_msg(self, msg_type, msg_sqn, msg_rnd, msg_rsv, msg_payload):
-		
+	def send_msg(self, msg_type, msg_payload):
+		# all of this has to be encrypted
 		# build message
-		msg_size = self.size_msg_hdr + len(msg_payload)
+		msg_size = self.size_msg_hdr
+		print(f"msg size with just header: {msg_size}")
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
-		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + msg_sqn + msg_rnd + msg_rsv
+		sqn = (self.sequence_counter).to_bytes(self.size_msg_hdr_sqn, byteorder='big')  ## how do we make sure that the sqn is incremented?
+		self.sequence_counter+=1
+		rsv = b'\x00\x00'
+		rnd = get_random_bytes(self.size_msg_hdr_rnd)
+		temp_key = get_random_bytes(32)
+		enc, mac = encrypt_payload(msg_payload, temp_key, rnd, sqn)
+		msg_hdr = self.msg_hdr_ver + msg_type + sqn + rnd + rsv
+		# build message
+
+		msg_size = self.size_msg_hdr + len(msg_payload) # this is the size of the entire messagfe including payload
+		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
+		# msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len
 		# TODO
 		# Include the msg tkey and mac if login request type
 		# DEBUG 
+		msg_size += self.msg_mac_len # adding the mac_len
+		msg_hdr = self.msg_hdr_ver + msg_type + msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big') + sqn + rnd + rsv
+
 		if self.DEBUG:
 			print('MTP message to send (' + str(msg_size) + '):')
-			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
+			# print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
 			print('BDY (' + str(len(msg_payload)) + '): ')
 			print(msg_payload.hex())
 			print('------------------------------------------')
@@ -189,7 +217,7 @@ class SiFT_MTP:
 
 		# try to send
 		try:
-			self.send_bytes(msg_hdr + msg_payload)
+			self.send_bytes(msg_hdr + msg_payload + mac) #TODO Ensure the message sent is the encrypted message
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
 

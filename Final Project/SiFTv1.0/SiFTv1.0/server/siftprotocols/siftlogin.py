@@ -8,6 +8,9 @@ from Crypto.Random import get_random_bytes
 from Crypto.Cipher import AES
 from Crypto.Protocol.KDF import PBKDF2
 from collections import defaultdict
+import hmac
+import hashlib
+
 
     
 class SiFT_LOGIN_Error(Exception):
@@ -138,7 +141,15 @@ class SiFT_LOGIN:
         pwdhash = PBKDF2(pwd, usr_struct['salt'], len(usr_struct['pwdhash']), count=usr_struct['icount'], hmac_hash_module=SHA256)
         if pwdhash == usr_struct['pwdhash']: return True
         return False
-
+    
+    def load_final_key(final_key_file):
+        passphrase = getpass.getpass('Enter the password the final key (server-side): ')  
+        try:
+            with open(final_key_file, 'rb') as f:
+                final_key = f.read()
+            return final_key
+        except Exception as e:
+            print(f"Error loading final key: {e}")
 
     # handles login process (to be used by the server)
     def handle_login_server(self):
@@ -148,7 +159,7 @@ class SiFT_LOGIN:
         print("entered the server's handling of login")
         # trying to receive a login request
         try:
-            msg_type, msg_sqn, msg_rnd, msg_rsv, msg_payload, mac, etk = self.mtp.receive_msg() # add the new patameters
+            msg_ver ,msg_type, msg_len, msg_sqn, msg_rnd, msg_rsv, msg_payload, mac, etk = self.mtp.receive_msg() # add the new patameters
             print(f"the mac after handling: {mac}")
             # TODO add the mac and the etk
 
@@ -175,7 +186,9 @@ class SiFT_LOGIN:
             received_timestamp = login_req_struct['timestamp']
             if not validate_timestamp(received_timestamp):
                 raise SiFT_LOGIN_Error('Timestamp validation failed: potential replay attack or clock mismatch')
-
+            
+            # final_key = self.generate_final_key(server_random, mac)
+            # print(f"Final key: {final_key.hex()}")
            
             server_random = get_random_bytes(16)
 
@@ -184,7 +197,13 @@ class SiFT_LOGIN:
                 'server_random': server_random,
             }
             msg_res_payload = self.build_login_res(login_res_struct)
-            self.mtp.send_msg(self.mtp.type_login_res, msg_res_payload, msg_rnd, msg_rsv, msg_payload)
+            # sqn should be different
+            """
+            
+            """
+            
+            # msg_hdr = ver+leb+ty:res+sqn+rnd+sv+
+            self.mtp.send_msg(self.mtp.type_login_res, msg_res_payload)
 
         except Exception as e:
             print(f"Error occurred during login handling: {e}")
@@ -194,11 +213,11 @@ class SiFT_LOGIN:
         if self.DEBUG:
             print('User ' + login_req_struct['username'] + ' logged in')
         # DEBUG 
-        return login_req_struct['username'] #### is it actually supposed to return this back?
+        return login_req_struct['username'] 
 
 
     # handles login process (to be used by the client)
-    def handle_login_client(self, timestamp, username, password, client_random):
+    def handle_login_client(self, timestamp, username, password, client_random, server_random): ## edited to include the server random
 
         # building a login request
         login_req_struct = {}
@@ -206,6 +225,7 @@ class SiFT_LOGIN:
         login_req_struct['username'] = username
         login_req_struct['password'] = password
         login_req_struct['client_random'] = client_random
+        login_req_struct['server_random'] = server_random
         msg_payload = self.build_login_req(login_req_struct)
 
         # DEBUG 

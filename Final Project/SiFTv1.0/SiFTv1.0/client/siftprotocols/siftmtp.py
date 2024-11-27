@@ -119,27 +119,27 @@ class SiFT_MTP:
 	# receives and parses message, returns msg_type and msg_payload
 	def receive_msg(self):
 		mac = None
-		try:
-			msg_hdr = self.receive_bytes(self.size_msg_hdr)
-		except SiFT_MTP_Error as e:
-			raise SiFT_MTP_Error('Unable to receive message header --> ' + e.err_msg)
+		# try:
+		# 	msg_hdr = self.receive_bytes(self.size_msg_hdr)
+		# except SiFT_MTP_Error as e:
+		# 	raise SiFT_MTP_Error('Unable to receive message header --> ' + e.err_msg)
 
-		if len(msg_hdr) != self.size_msg_hdr: 
-			raise SiFT_MTP_Error('Incomplete message header received')
+		# if len(msg_hdr) != self.size_msg_hdr: 
+		# 	raise SiFT_MTP_Error('Incomplete message header received')
 		
 		parsed_msg_hdr = self.parse_msg_header(msg_hdr)
-		# return parsed_msg_hdr
-		# print(f"the parsed msg_hdr: {parsed_msg_hdr}")
+		# # return parsed_msg_hdr
+		# # print(f"the parsed msg_hdr: {parsed_msg_hdr}")
 
-		if parsed_msg_hdr['ver'] != self.msg_hdr_ver:
-			raise SiFT_MTP_Error('Unsupported version found in message header')
+		# if parsed_msg_hdr['ver'] != self.msg_hdr_ver:
+		# 	raise SiFT_MTP_Error('Unsupported version found in message header')
 
-		if parsed_msg_hdr['typ'] not in self.msg_types:
-			raise SiFT_MTP_Error('Unknown message type found in message header')
+		# if parsed_msg_hdr['typ'] not in self.msg_types:
+		# 	raise SiFT_MTP_Error('Unknown message type found in message header')
 
 		# actual length of the message
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
-		if (parsed_msg_hdr['typ']) == self.type_login_req:
+		if (parsed_msg_hdr['typ']) == self.type_login_res:
 			try:
 				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len - self.etk_size)
 				mac = self.receive_bytes(msg_len - self.size_msg_hdr_len - self.etk_size)
@@ -226,7 +226,7 @@ class SiFT_MTP:
 		self.sequence_counter+=1
 		rsv = b'\x00\x00'
 
-		msg_hdr = self.msg_hdr_ver + msg_type + sqn + rnd + rsv # the header is 16 bytes which looks good
+		# msg_hdr = self.msg_hdr_ver + msg_type + sqn + rnd + rsv # the header is 16 bytes which looks good
 		# Generating the mac and cipher key for the msg payload
 		# TODO: ADD THE ENCRYPTED TEMPKEY
 		# generate a temp key
@@ -263,10 +263,11 @@ class SiFT_MTP:
 		# try to send
 		print(isLoginReq)
 		try:
+
 			if isLoginReq:
 				print("hello in the login")
 				self.send_bytes(msg_hdr + ciphertext + mac + etk) #TODO Add the encrypted temporary key
-			else:
+			else: ### TODO: ADD THE MAC
 				self.send_bytes(msg_hdr + ciphertext)
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)

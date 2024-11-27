@@ -1,10 +1,12 @@
 #python3
 
-import os
+import os, getpass
 import time
 from Crypto.Hash import SHA256
 from Crypto.Protocol.KDF import PBKDF2
 from siftprotocols.siftmtp import SiFT_MTP, SiFT_MTP_Error
+from Crypto.Protocol.KDF import HKDF
+from Crypto.Random import get_random_bytes
 
 
 class SiFT_LOGIN_Error(Exception):
@@ -56,7 +58,8 @@ class SiFT_LOGIN:
     # builds a login response from a dictionary
     def build_login_res(self, login_res_struct):
 
-        login_res_str = login_res_struct['request_hash'].hex() 
+        login_res_str = login_res_struct['request_hash'].hex()  +  login_res_struct['server_random'].hex() 
+
         return login_res_str.encode(self.coding)
 
 
@@ -65,6 +68,7 @@ class SiFT_LOGIN:
         login_res_fields = login_res.decode(self.coding).split(self.delimiter)
         login_res_struct = {}
         login_res_struct['request_hash'] = bytes.fromhex(login_res_fields[0])
+        print(login_res_struct)
         return login_res_struct
 
 
@@ -111,10 +115,13 @@ class SiFT_LOGIN:
                 raise SiFT_LOGIN_Error('Password verification failed')
         else:
             raise SiFT_LOGIN_Error('Unkown user attempted to log in')
+        
+        server_random = get_random_bytes(16)
 
         # building login response
         login_res_struct = {}
         login_res_struct['request_hash'] = request_hash
+        login_res_struct['server_random'] = server_random
         msg_payload = self.build_login_res(login_res_struct)
 
         # DEBUG 
@@ -129,6 +136,21 @@ class SiFT_LOGIN:
             self.mtp.send_msg(self.mtp.type_login_res, msg_payload)
         except SiFT_MTP_Error as e:
             raise SiFT_LOGIN_Error('Unable to send login response --> ' + e.err_msg)
+        
+        client_random = login_req_struct['client_random']
+        init_key_material = client_random + server_random
+
+        final_tranfer_file = "final_transfer.bin"
+
+        def generate_final_key(init_key, request_hash):
+            final_tk = HKDF(master=init_key_material, key_len=32, salt=request_hash, hashmod=SHA256)
+            passphrase = getpass.getpass("Enter your password for the final key: ")
+    
+            ## creating the final key and setting the passphrase
+            with open(final_tranfer_file,'wb' ) as key_file:
+                key_file.write(final_tk, passphrase = passphrase)        
+            
+        # self.mtp.set_transfer_key(final_tk)
 
         # DEBUG 
         if self.DEBUG:
@@ -168,9 +190,31 @@ class SiFT_LOGIN:
         # trying to receive a login response
         try:
             # this is supposed to print something but nothing gets printed out
-            msg_payload = self.mtp.receive_msg()
+            msg_type, msg_payload = self.mtp.receive_msg()
         except SiFT_MTP_Error as e:
             raise SiFT_LOGIN_Error('Unable to receive login response --> ' + e.err_msg)
+        
+        if msg_type != self.mtp.type_login_res:
+            raise SiFT_LOGIN_Error('Login response expected, but received something else')
+        
+        login_res_struct = self.parse_login_res(msg_payload)
+
+        if login_res_struct['request_hash'] != request_hash:
+            raise SiFT_LOGIN_Error('Verification of login response failed')
+        
+        client_random = login_res_struct['client_random']
+        server_random = login_res_struct['server_random']
+
+        init_key_material = client_random + server_random 
+        final_tk = HKDF(master=init_key_material, key_len=32, salt=request_hash, hashmod=SHA256)
+        self.mtp.set_transfer_key(final_tk)
+
+        ## DEBUG
+        if self.DEBUG:
+            print("Final transfer key is derived and set")
+
+
+
 
         # TODO: UNCOMMENT THESE OUT
         # # DEBUG 
