@@ -60,6 +60,7 @@ class SiFT_MTP:
 
 		## Additionals for v1.0
 		self.size_msg_hdr_sqn = 2
+		self.sequence_counter = 1
 		self.size_msg_hdr_rnd = 6
 		self.size_msg_hdr_rsv = 2
 		self.msg_mac_len = 12
@@ -221,7 +222,8 @@ class SiFT_MTP:
 		msg_size = self.size_msg_hdr
 		print(f"msg size with just header: {msg_size}")
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
-		sqn = (1).to_bytes(self.size_msg_hdr_sqn, byteorder='big')  ## how do we make sure that the sqn is incremented?
+		sqn = (self.sequence_counter).to_bytes(self.size_msg_hdr_sqn, byteorder='big')  ## how do we make sure that the sqn is incremented?
+		self.sequence_counter+=1
 		rsv = b'\x00\x00'
 
 		msg_hdr = self.msg_hdr_ver + msg_type + sqn + rnd + rsv # the header is 16 bytes which looks good
