@@ -168,25 +168,26 @@ class SiFT_LOGIN:
         # trying to receive a login response
         try:
             # this is supposed to print something but nothing gets printed out
-            msg_payload = self.mtp.receive_msg()
+            msg_type, msg_sqn, msg_rnd, msg_payload, mac = self.mtp.receive_msg()
+            # TODO: Decrypt this payload
+
         except SiFT_MTP_Error as e:
             raise SiFT_LOGIN_Error('Unable to receive login response --> ' + e.err_msg)
 
         # TODO: UNCOMMENT THESE OUT
         # # DEBUG 
-        # if self.DEBUG:
-        #     print('Incoming payload (' + str(len(msg_payload)) + '):')
-        #     print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
-        #     print('------------------------------------------')
-        # # DEBUG 
+        if self.DEBUG:
+            print('Incoming payload (' + str(len(msg_payload)) + '):')
+            print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
+            print('------------------------------------------')
+        # DEBUG 
 
-        # if msg_type != self.mtp.type_login_res:
-        #     raise SiFT_LOGIN_Error('Login response expected, but received something else')
+        if msg_type != self.mtp.type_login_res:
+            raise SiFT_LOGIN_Error('Login response expected, but received something else')
 
-        # # processing login response
-        # login_res_struct = self.parse_login_res(msg_payload)
+        # processing login response
+        login_res_struct = self.parse_login_res(msg_payload)
         # TODO: Include the server random in the verification
-        # # checking request_hash receiveid in the login response
-        # if login_res_struct['request_hash'] != request_hash:
-        #     raise SiFT_LOGIN_Error('Verification of login response failed')
+        if login_res_struct['request_hash'] != request_hash:
+            raise SiFT_LOGIN_Error('Verification of login response failed')
 

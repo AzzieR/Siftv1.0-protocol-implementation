@@ -148,9 +148,7 @@ class SiFT_LOGIN:
         print("entered the server's handling of login")
         # trying to receive a login request
         try:
-            msg_type, msg_sqn, msg_rnd, msg_rsv, msg_payload, mac, etk = self.mtp.receive_msg() # add the new patameters
-            print(f"the mac after handling: {mac}")
-            # TODO add the mac and the etk
+            msg_type, msg_sqn, msg_rnd, msg_payload, mac, etk = self.mtp.receive_msg() # add the new patameters
 
             if msg_type != self.mtp.type_login_req:
                 raise SiFT_LOGIN_Error('Login request expected, but received something else')
@@ -184,7 +182,9 @@ class SiFT_LOGIN:
                 'server_random': server_random,
             }
             msg_res_payload = self.build_login_res(login_res_struct)
-            self.mtp.send_msg(self.mtp.type_login_res, msg_res_payload)
+
+            # encrypt the messagge using AES in gcm mode
+            self.mtp.send_msg(self.mtp.type_login_res, tk, msg_res_payload)
 
         except Exception as e:
             print(f"Error occurred during login handling: {e}")

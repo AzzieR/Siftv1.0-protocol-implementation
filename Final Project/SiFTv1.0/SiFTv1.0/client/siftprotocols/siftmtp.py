@@ -14,6 +14,7 @@ class SiFT_MTP_Error(Exception):
 
     def __init__(self, err_msg):
         self.err_msg = err_msg
+
 """ Loading the server's public key from its file"""
 def load_publickey(pubkeyfile):
 	with open(pubkeyfile, 'rb') as f:
@@ -25,10 +26,7 @@ def load_publickey(pubkeyfile):
 		sys.exit(1)
 """ Encryption of the server's public key with the random bytes temp key"""
 def encrypt_key_with_public_key(pubkeyfile, random_key):
-    # Generate a random cryptographic key (e.g., 32 bytes for AES-256)
-    # Load the server's public key
     public_key = load_publickey(pubkeyfile)
-
     # Encrypt the random key using RSA-OAEP
     cipher = PKCS1_OAEP.new(public_key)
     encrypted_key = cipher.encrypt(random_key)
@@ -37,11 +35,9 @@ def encrypt_key_with_public_key(pubkeyfile, random_key):
     return encrypted_key
 
 def encrypt_payload(payload, temp_key, rnd, sqn):
-    # Create AES cipher in GCM mode
     cipher_aes = AES.new(temp_key, AES.MODE_GCM, nonce=rnd+sqn, mac_len=12)
     ciphertext, tag = cipher_aes.encrypt_and_digest(payload)
     return ciphertext, tag
-# print(encrypt_key_with_public_key("server_pubkey.pem"))
 
 server_pubkey_path = os.path.join(os.path.dirname(__file__), '..', '..', 'server', 'server_pubkey.pem')
 
@@ -137,18 +133,13 @@ class SiFT_MTP:
 
 		# actual length of the message
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
-		if (parsed_msg_hdr['typ']) == self.type_login_req:
+		print(f"the full msg len from server: {msg_len}")
+		if (parsed_msg_hdr['typ']) == self.type_login_res:
 			try:
-				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len - self.etk_size)
-				mac = self.receive_bytes(msg_len - self.size_msg_hdr_len - self.etk_size)
-				# Load the public key from its location
-		# # generate a temp key
-		# 		temp_key = get_random_bytes(32)
-		# 		etk = encrypt_key_with_public_key("server_pubkey.pem", temp_key)
-		# 		# use the tk to encrypt the payload
-		# 		sqn, rnd = parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd']
-		# 		ciphertext, mac = encrypt_payload(msg_body, temp_key, rnd, sqn)
-		# 		print(f"Incoming login request with encrypted temp key: {etk.hex()}")
+				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len)
+
+				# decrypt the msg_body using the tk but tk isnt saved
+				mac = self.receive_bytes(msg_len - self.size_msg_hdr - len(msg_body))
 			except SiFT_MTP_Error as e:
 				raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
 		# TODO: IF ITS A SERVER RESPONSE TYPE: CHHECK THE SERVER RANDOM AND THE REQUEST HASH
@@ -168,9 +159,10 @@ class SiFT_MTP:
 			print('BDY (' + str(len(msg_body)) + '): ')
 			print(msg_body.hex())
 			if (mac):
+				print(f"Mac bytes: {mac}")
 				print('MAC (' + str(len(mac)) + '): ' + mac.hex())
 			# print('Decrypted Payload: ' + decrypted_payload)
-			print('MSG RESPONSE FROM SERVER PAYLOAd: '+msg_body) # dis shld include the serverrandom sand request hash
+			# print('MSG RESPONSE FROM SERVER PAYLOAd: '+msg_body) # dis shld include the serverrandom sand request hash
 			# should that be encrypted
 			print('------------------------------------------')
 		# DEBUG 
@@ -178,7 +170,7 @@ class SiFT_MTP:
 		if len(msg_body) != msg_len - self.size_msg_hdr: 
 			raise SiFT_MTP_Error('Incomplete message body reveived')
 
-		return parsed_msg_hdr['typ'], msg_body
+		return parsed_msg_hdr['typ'], parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd'], msg_body, mac
 	
 	### Added function
 	def decrypt_payload(self, ciphertext, mac, parsed_msg_hdr):
@@ -219,7 +211,6 @@ class SiFT_MTP:
 		# build message
 		msg_size = self.size_msg_hdr
 		print(f"msg size with just header: {msg_size}")
-		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
 		sqn = (1).to_bytes(self.size_msg_hdr_sqn, byteorder='big')  ## how do we make sure that the sqn is incremented?
 		rsv = b'\x00\x00'
 
@@ -229,10 +220,11 @@ class SiFT_MTP:
 		# generate a temp key
 		if isLoginReq:
 			temp_key = get_random_bytes(32)
+			print(f"temp_key: {temp_key}")
 			etk = encrypt_key_with_public_key(server_pubkey_path, temp_key)
-			print(f"the etk right after gen: {len(etk)}")
+			print(f"the etk right after gen: {etk}")
 			# use the tk to encrypt the payload
-			ciphertext, mac = encrypt_payload(msg_payload, temp_key, rnd, sqn)
+			ciphertext, mac = encrypt_payload(msg_payload, temp_key, rnd, sqn) #TODO This should ALWAYS Be encrypted
 			print(f"the mac right after encryptio: {len(mac)}")
 			print(f"Incoming login request with encrypted temp key: {etk}")
 			msg_size += self.msg_mac_len + self.etk_size

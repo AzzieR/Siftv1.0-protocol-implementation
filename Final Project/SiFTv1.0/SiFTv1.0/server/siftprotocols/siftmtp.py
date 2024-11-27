@@ -27,7 +27,8 @@ class SiFT_MTP:
 		self.msg_mac_len = 12
 		self.etk_size = 256
 		self.aes_key = get_random_bytes(16)#### typically is 16, but could be changed
-
+		self.rsv = b'\x00\x00'
+		self.sequence_counter = 1
 		self.type_login_req =    b'\x00\x00'
 		self.type_login_res =    b'\x00\x10'
 		self.type_command_req =  b'\x01\x00'
@@ -83,7 +84,6 @@ class SiFT_MTP:
 
 	# receives and parses message, returns msg_type and msg_payload
 	def receive_msg(self):
-
 		try:
 			msg_hdr = self.receive_bytes(self.size_msg_hdr) #TODO: Confirm the header has the right params
 		except SiFT_MTP_Error as e:
@@ -152,7 +152,7 @@ class SiFT_MTP:
 				raise SiFT_MTP_Error('Incomplete message body reveived')
 			print("the message body received is complete")
 			print(f"the mac to be sent to the handle_login_server: {mac}")
-			return parsed_msg_hdr['typ'], parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd'], parsed_msg_hdr['rsv'], msg_body, mac, etk
+			return parsed_msg_hdr['typ'], parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd'], msg_body, mac, etk
 		else:
 			if len(msg_body) != msg_len - self.size_msg_hdr: #TODO Update when mac and etk is added
 				raise SiFT_MTP_Error('Incomplete message body reveived')
@@ -170,28 +170,45 @@ class SiFT_MTP:
 
 	# builds and sends message of a given type using the provided payload
 	# added the new header params to the send_msg
-	def send_msg(self, msg_type, msg_sqn, msg_rnd, msg_rsv, msg_payload):
-		
+	def send_msg(self, msg_type, tk, msg_payload): # this shuld include the tk for enc
 		# build message
-		msg_size = self.size_msg_hdr + len(msg_payload)
+		rnd_server = get_random_bytes(self.size_msg_hdr_rnd)
+		sqn_server = (self.sequence_counter).to_bytes(self.size_msg_hdr_sqn, byteorder='big')  ## how do we make sure that the sqn is incremented?
+		self.sequence_counter +=1
+		ciphertext, mac = encrypt_payload(msg_payload, tk, rnd_server, sqn_server)
+		print(f"the mac right after encryption: {len(mac)}")
+		msg_size = self.size_msg_hdr + len(ciphertext) + self.msg_mac_len # includes the len hdr, len epd and len mac
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
-		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + msg_sqn + msg_rnd + msg_rsv
+
+		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + sqn_server + rnd_server + self.rsv
+
 		# TODO
 		# Include the msg tkey and mac if login request type
 		# DEBUG 
 		if self.DEBUG:
 			print('MTP message to send (' + str(msg_size) + '):')
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
-			print('BDY (' + str(len(msg_payload)) + '): ')
-			print(msg_payload.hex())
+			print('BDY (' + str(len(ciphertext)) + '): ')
+			print(ciphertext.hex())
+			print(f'MAC ({len(mac)})')
 			print('------------------------------------------')
 		# DEBUG 
 
 		# try to send
 		try:
-			self.send_bytes(msg_hdr + msg_payload)
+			self.send_bytes(msg_hdr + ciphertext + mac)
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
 
 #: Function that returns a random byte string of the desired size.
 get_random_bytes = urandom
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Random import get_random_bytes
+def encrypt_payload(payload, temp_key, rnd, sqn):
+    # Create AES cipher in GCM mode
+    cipher_aes = AES.new(temp_key, AES.MODE_GCM, nonce=rnd+sqn, mac_len=12)
+    ciphertext, tag = cipher_aes.encrypt_and_digest(payload)
+    return ciphertext, tag

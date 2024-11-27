@@ -30,7 +30,6 @@ class SiFT_LOGIN:
 
     # builds a login request from a dictionary
     def build_login_req(self, login_req_struct):
-
         login_req_str = login_req_struct['username']
         login_req_str += self.delimiter + login_req_struct['password'] 
         return login_req_str.encode(self.coding)
@@ -160,7 +159,7 @@ class SiFT_LOGIN:
 
         # trying to receive a login response
         try:
-            msg_type, msg_payload = self.mtp.receive_msg()
+            msg_type, msg_payload = self.mtp.receive_msg() # receive message from server
         except SiFT_MTP_Error as e:
             raise SiFT_LOGIN_Error('Unable to receive login response --> ' + e.err_msg)
 
