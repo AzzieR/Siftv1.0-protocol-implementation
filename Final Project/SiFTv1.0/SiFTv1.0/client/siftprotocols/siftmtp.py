@@ -24,14 +24,12 @@ def load_publickey(pubkeyfile):
 	except ValueError:
 		print('Error: Cannot import public key from file ' + pubkeyfile)
 		sys.exit(1)
+
 """ Encryption of the server's public key with the random bytes temp key"""
 def encrypt_key_with_public_key(pubkeyfile, random_key):
     public_key = load_publickey(pubkeyfile)
-    # Encrypt the random key using RSA-OAEP
     cipher = PKCS1_OAEP.new(public_key)
     encrypted_key = cipher.encrypt(random_key)
-	# verify that the etk is 256 bytes
-    # Return the encrypted key encoded in base64
     return encrypted_key
 
 def encrypt_payload(payload, temp_key, rnd, sqn):
@@ -61,7 +59,7 @@ class SiFT_MTP:
 		self.size_msg_hdr_rsv = 2
 		self.msg_mac_len = 12
 		self.etk_size = 256
-		self.aes_key = get_random_bytes(16)#### typically is 16, but could be changed
+		self.sequence_counter = 1
 
 		self.type_login_req =    b'\x00\x00'
 		self.type_login_res =    b'\x00\x10'
@@ -80,25 +78,26 @@ class SiFT_MTP:
 		# --------- STATE ------------
 		self.peer_socket = peer_socket
 
-
-
 	def set_session_key(self, key):
 		self.session_key = key
 	def get_session_key(self):
 		return self.session_key  # Retrieve the session key when needed
 	
+	def set_sequence_counter(self):
+		self.sequence_counter += 1
+	
+	def get_sequence_counter(self):
+		return self.sequence_counter
+	
 	# parses a message header and returns a dictionary containing the header fields
 	def parse_msg_header(self, msg_hdr):
-
 		parsed_msg_hdr, i = {}, 0
 		parsed_msg_hdr['ver'], i = msg_hdr[i:i+self.size_msg_hdr_ver], i+self.size_msg_hdr_ver 
 		parsed_msg_hdr['typ'], i = msg_hdr[i:i+self.size_msg_hdr_typ], i+self.size_msg_hdr_typ
-		## Added and/or modified for v1.0
 		parsed_msg_hdr['len'], i = msg_hdr[i:i+self.size_msg_hdr_len], i+self.size_msg_hdr_len
 		parsed_msg_hdr['sqn'], i = msg_hdr[i:i+self.size_msg_hdr_sqn], i+self.size_msg_hdr_sqn
 		parsed_msg_hdr['rnd'], i = msg_hdr[i:i+self.size_msg_hdr_rnd], i+self.size_msg_hdr_rnd
 		parsed_msg_hdr['rsv'], i = msg_hdr[i:i+self.size_msg_hdr_rsv], i+self.size_msg_hdr_rsv
-		print(f"the parsed msg hdr: {parsed_msg_hdr}")
 		return parsed_msg_hdr
 
 
@@ -138,20 +137,12 @@ class SiFT_MTP:
 		# actual length of the message
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
 
-		if (parsed_msg_hdr['typ']) == self.type_login_res:
-			try:
+		try:
 				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len)
 				lth = len(msg_body)
 				mac = self.receive_bytes(msg_len - self.size_msg_hdr - lth)
-			except SiFT_MTP_Error as e:
-				raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
-		# TODO: IF ITS A SERVER RESPONSE TYPE: CHHECK THE SERVER RANDOM AND THE REQUEST HASH
-		else:
-			try:
-				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len) ### body including the message and mac
-			except SiFT_MTP_Error as e:
-				raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
-
+		except SiFT_MTP_Error as e:
+			raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
 
 		# DEBUG 
 		if self.DEBUG:
@@ -163,20 +154,12 @@ class SiFT_MTP:
 				print(f"Mac bytes: {mac}")
 				print('MAC (' + str(len(mac)) + '): ' + mac.hex())
 			print('------------------------------------------')
+		
 		# DEBUG 
 		if len(msg_body) != msg_len - self.size_msg_hdr - self.msg_mac_len: 
 			raise SiFT_MTP_Error('Incomplete message body reveived')
-
 		return parsed_msg_hdr['typ'], parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd'], msg_body, mac
 	
-	### Another added function
-	def create_additional_data(self, parsed_msg_hdr):
-		return (parsed_msg_hdr['ver'] + parsed_msg_hdr['typ'] +
-                parsed_msg_hdr['len'] + parsed_msg_hdr['sqn'] +
-                parsed_msg_hdr['rnd'] + parsed_msg_hdr['rsv'])
-	
-
-
 	# sends all bytes provided via the peer socket
 	def send_bytes(self, bytes_to_send):
 		try:
@@ -185,71 +168,40 @@ class SiFT_MTP:
 		except:
 			raise SiFT_MTP_Error('Unable to send via peer socket')
 
-
 	# builds and sends message of a given type using the provided payload
 	def send_msg(self, msg_type, msg_payload):
 		isLoginReq = msg_type == self.type_login_req
 		ciphertext = msg_payload
-		print("Sending the message to the server")
+		msg_size = 0
 		## Adding the nonce (rnd)
 		rnd = get_random_bytes(self.size_msg_hdr_rnd)
-
 		# build message
-		msg_size = self.size_msg_hdr
-		print(f"msg size with just header: {msg_size}")
-		sqn = (1).to_bytes(self.size_msg_hdr_sqn, byteorder='big')  ## how do we make sure that the sqn is incremented?
+		sqn = self.sequence_counter.to_bytes(self.size_msg_hdr_sqn, byteorder='big') # but confirm how we verify the sequence counter though.
+		self.set_sequence_counter()
 		rsv = b'\x00\x00'
-
-		msg_hdr = self.msg_hdr_ver + msg_type + sqn + rnd + rsv # the header is 16 bytes which looks good
-		# Generating the mac and cipher key for the msg payload
-		# TODO: ADD THE ENCRYPTED TEMPKEY
-		# generate a temp key
+		temp_key = get_random_bytes(32)
+		self.set_session_key(temp_key)
+		ciphertext, mac = encrypt_payload(msg_payload, temp_key, rnd, sqn)
 		if isLoginReq:
-			temp_key = get_random_bytes(32)
-			self.set_session_key(temp_key)
-			print(f"temp_key: {temp_key}")
 			etk = encrypt_key_with_public_key(server_pubkey_path, temp_key)
-			print(f"the etk right after gen: {etk}")
-			# use the tk to encrypt the payload
-			ciphertext, mac = encrypt_payload(msg_payload, temp_key, rnd, sqn) #TODO This should ALWAYS Be encrypted
-			print(f"the mac right after encryptio: {len(mac)}")
-			print(f"Incoming login request with encrypted temp key: {etk}")
-			msg_size += self.msg_mac_len + self.etk_size
-		print(f"msg size with mac and etk: {msg_size}")
-
-		msg_size += len(ciphertext)
-		print(f"msg size with ciphertext: {msg_size}")
-
+			msg_size = self.etk_size
+		msg_size += self.size_msg_hdr + len(ciphertext) + self.msg_mac_len 
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big') + sqn + rnd + rsv # the header is 16 bytes which looks good
 
 		# DEBUG 
 		if self.DEBUG:
 			print('MTP message to send to server (' + str(msg_size) + '):')
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
-
-			print('BDY (' + str(len(msg_payload)) + '): ')
-			print(ciphertext.hex())
+			print('BDY (' + str(len(ciphertext)) + '): ')
+			print(f'MAC ({len(mac)})')
 			if isLoginReq:
-				print('MAC (): ')
-				print('MAC (' + str(len(mac)) + '): ' + mac.hex())
-				print('ETK')
+				print(f'ETK ({len(etk)})')
 			print('------------------------------------------')
 		# DEBUG 
-		print("Entering the send bytes to the server")
-		# try to send
-		print(isLoginReq)
 		try:
 			if isLoginReq:
-				print("hello in the login")
-				self.send_bytes(msg_hdr + ciphertext + mac + etk) #TODO Add the encrypted temporary key
+				self.send_bytes(msg_hdr + ciphertext + mac + etk)
 			else:
-				self.send_bytes(msg_hdr + ciphertext)
+				self.send_bytes(msg_hdr + ciphertext + mac)
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
-
-enc = b"\x85\xa1'h\xc1\xf9m>b\xbe\xf3\x1dD\x9d\xea\xb15\t\xad\x93\xa1\x1a\x8e\x9a\xf9N\xc3\xe9U|\xb4\x01"
-dec = b"\x85\xa1'h\xc1\xf9m>b\xbe\xf3\x1dD\x9d\xea\xb15\t\xad\x93\xa1\x1a\x8e\x9a\xf9N\xc3\xe9U|\xb4\x01"
-# sent sqn ser: b'\x00\x01'
-# sent rnd ser: b'N\xfb\xa1\x92I\x07'
-# the sqn from ser: b'\x00\x01'
-# the sqn from ser: b'N\xfb\xa1\x92I\x07'

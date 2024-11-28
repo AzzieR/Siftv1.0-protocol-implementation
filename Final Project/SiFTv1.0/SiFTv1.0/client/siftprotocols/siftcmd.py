@@ -208,7 +208,7 @@ class SiFT_CMD:
 
         # trying to receive a command request
         try:
-            msg_type, msg_payload = self.mtp.receive_msg()
+            msg_type, sqn, rnd, msg_payload, mac = self.mtp.receive_msg() #TODO Decrypt the payload here
         except SiFT_MTP_Error as e:
             raise SiFT_CMD_Error('Unable to receive command request --> ' + e.err_msg)
 
@@ -285,7 +285,7 @@ class SiFT_CMD:
 
         # trying to send command request
         try:
-            self.mtp.send_msg(self.mtp.type_command_req, msg_payload)
+            self.mtp.send_msg(self.mtp.type_command_req, msg_payload) #TODO ensure the message is encrypted
         except SiFT_MTP_Error as e:
             raise SiFT_CMD_Error('Unable to send command request --> ' + e.err_msg)
 
@@ -296,7 +296,7 @@ class SiFT_CMD:
 
         # trying to receive a command response
         try:
-            msg_type, msg_payload = self.mtp.receive_msg()
+            msg_type, msg_payload = self.mtp.receive_msg() #TODO Update this as it would include the mac.
         except SiFT_MTP_Error as e:
             raise SiFT_CMD_Error('Unable to receive command response --> ' + e.err_msg)
 

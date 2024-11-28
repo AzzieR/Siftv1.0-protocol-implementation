@@ -166,10 +166,6 @@ class SiFT_LOGIN:
         except SiFT_MTP_Error as e:
             raise SiFT_LOGIN_Error('Unable to send login request --> ' + e.err_msg)
 
-
-
-        print(f"the req hash of the login req cli: {request_hash.hex()}")
-
         # trying to receive a login response
         try:
             # this is supposed to print something but nothing gets printed out
@@ -200,6 +196,9 @@ class SiFT_LOGIN:
         print(f"the req has from the server: {login_res_struct['request_hash'].hex()}")
         if login_res_struct['request_hash'] != request_hash:
             raise SiFT_LOGIN_Error('Verification of login response failed')
+        
+        # now add the client_random and server_random to form the key
+        
 	### Added function
     def decrypt_payload(self, ciphertext, key, mac, sqn, rnd): # from server to client
         print(f'the dec key: {key}')
