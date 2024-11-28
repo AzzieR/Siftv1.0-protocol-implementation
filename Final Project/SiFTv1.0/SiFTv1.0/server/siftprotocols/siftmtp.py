@@ -10,7 +10,7 @@ class SiFT_MTP_Error(Exception):
 
 class SiFT_MTP:
 	def __init__(self, peer_socket):
-
+		self.session_key = None  # Initialize session_key to None or some default value
 		self.DEBUG = True
 		# --------- CONSTANTS ------------
 		self.version_major = 1
@@ -45,6 +45,11 @@ class SiFT_MTP:
 						  self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
 		# --------- STATE ------------
 		self.peer_socket = peer_socket
+		
+	def set_session_key(self, key):
+		self.session_key = key
+	def get_session_key(self):
+		return self.session_key  # Retrieve the session key when needed
 
 
 	# parses a message header and returns a dictionary containing the header fields
@@ -170,27 +175,25 @@ class SiFT_MTP:
 
 	# builds and sends message of a given type using the provided payload
 	# added the new header params to the send_msg
-	def send_msg(self, msg_type, tk, msg_payload): # this shuld include the tk for enc
+	def send_msg(self, msg_type, msg_payload): # this shuld include the tk for enc
 		# build message
 		rnd_server = get_random_bytes(self.size_msg_hdr_rnd)
 		sqn_server = (self.sequence_counter).to_bytes(self.size_msg_hdr_sqn, byteorder='big')  ## how do we make sure that the sqn is incremented?
 		self.sequence_counter +=1
-		ciphertext, mac = encrypt_payload(msg_payload, tk, rnd_server, sqn_server)
-		print(f"the mac right after encryption: {len(mac)}")
+		ciphertext, mac = encrypt_payload(msg_payload, self.get_session_key(), rnd_server, sqn_server)
 		msg_size = self.size_msg_hdr + len(ciphertext) + self.msg_mac_len # includes the len hdr, len epd and len mac
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
 
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + sqn_server + rnd_server + self.rsv
 
-		# TODO
-		# Include the msg tkey and mac if login request type
 		# DEBUG 
 		if self.DEBUG:
 			print('MTP message to send (' + str(msg_size) + '):')
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
 			print('BDY (' + str(len(ciphertext)) + '): ')
-			print(ciphertext.hex())
+			print(f"the cipher text sending: {ciphertext.hex()}")
 			print(f'MAC ({len(mac)})')
+			print(f"The actual mac from server: {mac.hex()}")
 			print('------------------------------------------')
 		# DEBUG 
 

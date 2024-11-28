@@ -5,6 +5,7 @@ import time
 from Crypto.Hash import SHA256
 from Crypto.Protocol.KDF import PBKDF2
 from siftprotocols.siftmtp import SiFT_MTP, SiFT_MTP_Error
+from Crypto.Cipher import AES
 
 
 class SiFT_LOGIN_Error(Exception):
@@ -62,9 +63,11 @@ class SiFT_LOGIN:
 
     # parses a login response into a dictionary
     def parse_login_res(self, login_res):
+        print(f"in parse: {login_res}")
         login_res_fields = login_res.decode(self.coding).split(self.delimiter)
         login_res_struct = {}
         login_res_struct['request_hash'] = bytes.fromhex(login_res_fields[0])
+        login_res_struct['server_random'] = bytes.fromhex(login_res_fields[1])
         return login_res_struct
 
 
@@ -146,7 +149,10 @@ class SiFT_LOGIN:
         login_req_struct['password'] = password
         msg_payload = self.build_login_req(login_req_struct)
         print(f"the msg payload: {msg_payload}")
-
+        # computing hash of request payload bfr enc
+        hash_fn = SHA256.new()
+        hash_fn.update(msg_payload)
+        request_hash = hash_fn.digest()
         # DEBUG 
         if self.DEBUG: # TODO Should we take out this print statements
             print('Outgoing payload from client: (' + str(len(msg_payload)) + '):')
@@ -160,25 +166,28 @@ class SiFT_LOGIN:
         except SiFT_MTP_Error as e:
             raise SiFT_LOGIN_Error('Unable to send login request --> ' + e.err_msg)
 
-        # computing hash of sent request payload
-        hash_fn = SHA256.new()
-        hash_fn.update(msg_payload)
-        request_hash = hash_fn.digest()
+
+
+        print(f"the req hash of the login req cli: {request_hash.hex()}")
 
         # trying to receive a login response
         try:
             # this is supposed to print something but nothing gets printed out
             msg_type, msg_sqn, msg_rnd, msg_payload, mac = self.mtp.receive_msg()
+ 
+            if msg_type != self.mtp.type_login_res:
+                raise SiFT_LOGIN_Error(f'Login request expected, but received something else {msg_type}')
+            
             # TODO: Decrypt this payload
-
+            decrypted_payload = self.decrypt_payload(msg_payload, self.mtp.get_session_key(), mac, msg_sqn, msg_rnd)
+            print(f"the server's response: {decrypted_payload}")
         except SiFT_MTP_Error as e:
             raise SiFT_LOGIN_Error('Unable to receive login response --> ' + e.err_msg)
 
-        # TODO: UNCOMMENT THESE OUT
-        # # DEBUG 
+        # DEBUG 
         if self.DEBUG:
-            print('Incoming payload (' + str(len(msg_payload)) + '):')
-            print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
+            print('Incoming payload (' + str(len(decrypted_payload)) + '):')
+            print(decrypted_payload[:max(512, len(decrypted_payload))].decode('utf-8'))
             print('------------------------------------------')
         # DEBUG 
 
@@ -186,8 +195,25 @@ class SiFT_LOGIN:
             raise SiFT_LOGIN_Error('Login response expected, but received something else')
 
         # processing login response
-        login_res_struct = self.parse_login_res(msg_payload)
-        # TODO: Include the server random in the verification
+        login_res_struct = self.parse_login_res(decrypted_payload)
+        print(f"the login_res_struct: {login_res_struct}")
+        print(f"the req has from the server: {login_res_struct['request_hash'].hex()}")
         if login_res_struct['request_hash'] != request_hash:
             raise SiFT_LOGIN_Error('Verification of login response failed')
+	### Added function
+    def decrypt_payload(self, ciphertext, key, mac, sqn, rnd): # from server to client
+        print(f'the dec key: {key}')
+        nonce = rnd + sqn
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=self.mtp.msg_mac_len)
+        try:
+            decrtpyed = cipher.decrypt(ciphertext)
+            print(f"the decrypted: {decrtpyed}")
+            cipher.verify(mac)
+        except ValueError as e:
+            raise SiFT_MTP_Error(f'Failed to verify the MAC: {e}')
+        return decrtpyed
 
+# 741c8ec0af102fba41251536ce010f88f576044684ca22b02d37d2441940a8c6
+# 741c8ec0af102fba41251536ce010f88f576044684ca22b02d37d2441940a8c6
+
+# f4845e53c02b10fc3fe58186ddab0b90f7a65b8c8618be3a780fcf03e4a61f85

@@ -43,6 +43,7 @@ server_pubkey_path = os.path.join(os.path.dirname(__file__), '..', '..', 'server
 
 class SiFT_MTP:
 	def __init__(self, peer_socket):
+		self.session_key = None  # Initialize session_key to None or some default value
 
 		self.DEBUG = True
 		# --------- CONSTANTS ------------
@@ -80,6 +81,12 @@ class SiFT_MTP:
 		self.peer_socket = peer_socket
 
 
+
+	def set_session_key(self, key):
+		self.session_key = key
+	def get_session_key(self):
+		return self.session_key  # Retrieve the session key when needed
+	
 	# parses a message header and returns a dictionary containing the header fields
 	def parse_msg_header(self, msg_hdr):
 
@@ -120,10 +127,7 @@ class SiFT_MTP:
 
 		if len(msg_hdr) != self.size_msg_hdr: 
 			raise SiFT_MTP_Error('Incomplete message header received')
-		
 		parsed_msg_hdr = self.parse_msg_header(msg_hdr)
-		# return parsed_msg_hdr
-		# print(f"the parsed msg_hdr: {parsed_msg_hdr}")
 
 		if parsed_msg_hdr['ver'] != self.msg_hdr_ver:
 			raise SiFT_MTP_Error('Unsupported version found in message header')
@@ -133,24 +137,21 @@ class SiFT_MTP:
 
 		# actual length of the message
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
-		print(f"the full msg len from server: {msg_len}")
+
 		if (parsed_msg_hdr['typ']) == self.type_login_res:
 			try:
 				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len)
-
-				# decrypt the msg_body using the tk but tk isnt saved
-				mac = self.receive_bytes(msg_len - self.size_msg_hdr - len(msg_body))
+				lth = len(msg_body)
+				mac = self.receive_bytes(msg_len - self.size_msg_hdr - lth)
 			except SiFT_MTP_Error as e:
 				raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
 		# TODO: IF ITS A SERVER RESPONSE TYPE: CHHECK THE SERVER RANDOM AND THE REQUEST HASH
 		else:
 			try:
-				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr) ### body including the message and mac
+				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len) ### body including the message and mac
 			except SiFT_MTP_Error as e:
 				raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
 
-		# TRYING TO DECRYPT THE PAYLOAD
-		# decrypted_payload = self.decrypt_payload(msg_body, mac, parsed_msg_hdr)
 
 		# DEBUG 
 		if self.DEBUG:
@@ -161,27 +162,12 @@ class SiFT_MTP:
 			if (mac):
 				print(f"Mac bytes: {mac}")
 				print('MAC (' + str(len(mac)) + '): ' + mac.hex())
-			# print('Decrypted Payload: ' + decrypted_payload)
-			# print('MSG RESPONSE FROM SERVER PAYLOAd: '+msg_body) # dis shld include the serverrandom sand request hash
-			# should that be encrypted
 			print('------------------------------------------')
 		# DEBUG 
-
-		if len(msg_body) != msg_len - self.size_msg_hdr: 
+		if len(msg_body) != msg_len - self.size_msg_hdr - self.msg_mac_len: 
 			raise SiFT_MTP_Error('Incomplete message body reveived')
 
 		return parsed_msg_hdr['typ'], parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd'], msg_body, mac
-	
-	### Added function
-	def decrypt_payload(self, ciphertext, mac, parsed_msg_hdr):
-		nonce = parsed_msg_hdr['rnd'] ###andom number from the header
-		cipher = AES.new(self.aes_key, AES.MODE_GCM, nonce=nonce, mac_len=self.msg_mac_len)
-		cipher.update(self.create_additional_data(parsed_msg_hdr))
-		try:
-			decrtpyed = cipher.decrypt_and_verify(ciphertext, mac)
-		except SiFT_MTP_Error:
-			raise SiFT_MTP_Error('Failed to verify the MAC')
-		return decrtpyed
 	
 	### Another added function
 	def create_additional_data(self, parsed_msg_hdr):
@@ -220,6 +206,7 @@ class SiFT_MTP:
 		# generate a temp key
 		if isLoginReq:
 			temp_key = get_random_bytes(32)
+			self.set_session_key(temp_key)
 			print(f"temp_key: {temp_key}")
 			etk = encrypt_key_with_public_key(server_pubkey_path, temp_key)
 			print(f"the etk right after gen: {etk}")
@@ -260,3 +247,9 @@ class SiFT_MTP:
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to send message to peer --> ' + e.err_msg)
 
+enc = b"\x85\xa1'h\xc1\xf9m>b\xbe\xf3\x1dD\x9d\xea\xb15\t\xad\x93\xa1\x1a\x8e\x9a\xf9N\xc3\xe9U|\xb4\x01"
+dec = b"\x85\xa1'h\xc1\xf9m>b\xbe\xf3\x1dD\x9d\xea\xb15\t\xad\x93\xa1\x1a\x8e\x9a\xf9N\xc3\xe9U|\xb4\x01"
+# sent sqn ser: b'\x00\x01'
+# sent rnd ser: b'N\xfb\xa1\x92I\x07'
+# the sqn from ser: b'\x00\x01'
+# the sqn from ser: b'N\xfb\xa1\x92I\x07'

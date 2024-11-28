@@ -8,6 +8,7 @@ from Crypto.Random import get_random_bytes
 from Crypto.Cipher import AES
 from Crypto.Protocol.KDF import PBKDF2
 from collections import defaultdict
+import traceback
 
     
 class SiFT_LOGIN_Error(Exception):
@@ -55,6 +56,7 @@ def decrypt_and_verify_payload(payload, rnd, sqn, tk, mac):
         # Verify the MAC
         cipher.verify(mac)
         print(f'the dec payload: {decrypted_payload}')
+        print(f'the tk: {tk}')
         return decrypted_payload
     except ValueError as e:
         print(f"the issue: {e}")
@@ -75,7 +77,6 @@ def validate_timestamp(received_timestamp, window=200):
 
 class SiFT_LOGIN:
     def __init__(self, mtp):
-
         self.DEBUG = True
         # --------- CONSTANTS ------------
         self.delimiter = '\n'
@@ -118,7 +119,8 @@ class SiFT_LOGIN:
 
     # builds a login response from a dictionary
     def build_login_res(self, login_res_struct):
-        login_res_str = login_res_struct['request_hash'].hex() + login_res_struct['server_random'].hex()
+        login_res_str = login_res_struct['request_hash'].hex()
+        login_res_str += self.delimiter + login_res_struct['server_random'].hex()
         return login_res_str.encode(self.coding)
 
 
@@ -154,15 +156,14 @@ class SiFT_LOGIN:
                 raise SiFT_LOGIN_Error('Login request expected, but received something else')
             
             tk = decrypt_etk_with_private_key(etk)
+            self.mtp.set_session_key(tk)
             decrypted_payload = decrypt_and_verify_payload(msg_payload, msg_rnd, msg_sqn, tk, mac)
             login_req_struct = self.parse_login_req(decrypted_payload)
 
-            request_hash = SHA256.new(data=msg_payload).digest()
-
-            # Validate the client-provided request hash if present
-            client_request_hash = login_req_struct.get('request_hash')  # Include in the request
-            if client_request_hash and client_request_hash != request_hash:
-                raise SiFT_LOGIN_Error('Request hash mismatch')
+            # create a req hash on the decrypted message
+            hash_fn = SHA256.new()
+            hash_fn.update(decrypted_payload)
+            request_hash = hash_fn.digest()
 
             if login_req_struct['username'] not in self.server_users:
                 raise SiFT_LOGIN_Error('User not found')
@@ -182,12 +183,14 @@ class SiFT_LOGIN:
                 'server_random': server_random,
             }
             msg_res_payload = self.build_login_res(login_res_struct)
-
+            print(f"bfr enc: {msg_res_payload}")
             # encrypt the messagge using AES in gcm mode
-            self.mtp.send_msg(self.mtp.type_login_res, tk, msg_res_payload)
+            self.mtp.send_msg(self.mtp.type_login_res, msg_res_payload)
 
         except Exception as e:
             print(f"Error occurred during login handling: {e}")
+            traceback.print_exc()  # This will print the full traceback
+
             raise SiFT_LOGIN_Error('Login handling failed')
 
         # DEBUG 
