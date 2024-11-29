@@ -1,11 +1,11 @@
 #python3
 
-import os
-import time
+import os, time, getpass
 from Crypto.Hash import SHA256
-from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Protocol.KDF import PBKDF2, HKDF
 from siftprotocols.siftmtp import SiFT_MTP, SiFT_MTP_Error
 from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
 
 
 class SiFT_LOGIN_Error(Exception):
@@ -23,22 +23,29 @@ class SiFT_LOGIN:
         # --------- STATE ------------
         self.mtp = mtp
         self.server_users = None 
+        client_random = None
 
 
     # sets user passwords dictionary (to be used by the server)
     def set_server_users(self, users):
         self.server_users = users
 
+    def set_client_random(self, client_random):
+        self.client_random = client_random
+    
+    def get_client_random(self):
+        return self.client_random
 
     # builds a login request from a dictionary including timestamp and client random
     def build_login_req(self, login_req_struct):
         # the time stamp and client random should be added here
         time_stamp = int(time.time() * 1000)
-        client_random = str(os.urandom(16))
+        client_random = get_random_bytes(16) # here client random is a simple byte sequence
+        self.set_client_random(client_random)
         login_req_str = str(time_stamp)
         login_req_str += self.delimiter + login_req_struct['username']
         login_req_str += self.delimiter + login_req_struct['password'] 
-        login_req_str += self.delimiter + client_random
+        login_req_str += self.delimiter + client_random.hex() # make this a string since im concat strings
         print(f"the login: {login_req_str}")
         print(f"the login req encode: {login_req_str.encode(self.coding)}")
         return login_req_str.encode(self.coding)
@@ -67,7 +74,7 @@ class SiFT_LOGIN:
         login_res_fields = login_res.decode(self.coding).split(self.delimiter)
         login_res_struct = {}
         login_res_struct['request_hash'] = bytes.fromhex(login_res_fields[0])
-        login_res_struct['server_random'] = bytes.fromhex(login_res_fields[1])
+        login_res_struct['server_random'] = bytes.fromhex(login_res_fields[1]) # here it's a byte
         return login_res_struct
 
 
@@ -169,21 +176,18 @@ class SiFT_LOGIN:
         # trying to receive a login response
         try:
             # this is supposed to print something but nothing gets printed out
-            msg_type, msg_sqn, msg_rnd, msg_payload, mac = self.mtp.receive_msg()
+            msg_type, msg_payload = self.mtp.receive_msg()
  
             if msg_type != self.mtp.type_login_res:
                 raise SiFT_LOGIN_Error(f'Login request expected, but received something else {msg_type}')
-            
-            # TODO: Decrypt this payload
-            decrypted_payload = self.decrypt_payload(msg_payload, self.mtp.get_session_key(), mac, msg_sqn, msg_rnd)
-            print(f"the server's response: {decrypted_payload}")
+
         except SiFT_MTP_Error as e:
             raise SiFT_LOGIN_Error('Unable to receive login response --> ' + e.err_msg)
 
         # DEBUG 
         if self.DEBUG:
-            print('Incoming payload (' + str(len(decrypted_payload)) + '):')
-            print(decrypted_payload[:max(512, len(decrypted_payload))].decode('utf-8'))
+            print('Incoming payload (' + str(len(msg_payload)) + '):')
+            print(msg_payload[:max(512, len(msg_payload))].decode('utf-8'))
             print('------------------------------------------')
         # DEBUG 
 
@@ -191,28 +195,27 @@ class SiFT_LOGIN:
             raise SiFT_LOGIN_Error('Login response expected, but received something else')
 
         # processing login response
-        login_res_struct = self.parse_login_res(decrypted_payload)
+        login_res_struct = self.parse_login_res(msg_payload)
         print(f"the login_res_struct: {login_res_struct}")
         print(f"the req has from the server: {login_res_struct['request_hash'].hex()}")
         if login_res_struct['request_hash'] != request_hash:
             raise SiFT_LOGIN_Error('Verification of login response failed')
         
         # now add the client_random and server_random to form the key
-        
-	### Added function
-    def decrypt_payload(self, ciphertext, key, mac, sqn, rnd): # from server to client
-        print(f'the dec key: {key}')
-        nonce = rnd + sqn
-        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=self.mtp.msg_mac_len)
-        try:
-            decrtpyed = cipher.decrypt(ciphertext)
-            print(f"the decrypted: {decrtpyed}")
-            cipher.verify(mac)
-        except ValueError as e:
-            raise SiFT_MTP_Error(f'Failed to verify the MAC: {e}')
-        return decrtpyed
+        client_random = self.get_client_random() # here it's a byte sequence
+        # print
+        server_random = login_res_struct['server_random'] # here it's a byte sequence
+        print(f"client lo client_type: {type(client_random)}")
+        print(f"server lo client_type: {type(server_random)}")
 
-# 741c8ec0af102fba41251536ce010f88f576044684ca22b02d37d2441940a8c6
-# 741c8ec0af102fba41251536ce010f88f576044684ca22b02d37d2441940a8c6
+        print(f"client lo client: {client_random}")
+        print(f"server lo client: {server_random}")
+        init_key_material = client_random + server_random
+        final_tk = HKDF(master=init_key_material, key_len=32, salt=request_hash, hashmod=SHA256)
+        self.mtp.set_session_key(final_tk)
 
-# f4845e53c02b10fc3fe58186ddab0b90f7a65b8c8618be3a780fcf03e4a61f85
+
+# client lo client: b'.\xb2\xe9\x17\xc1\xda\xa9\xf1;\xc0 J\xcc\xcb<r'
+# server lo client: b'\xbf\xcf\xc5\xfa\xf9^\xae)\x99\x91\xdf\x1aX\xe9a$'
+# server lo client: b'.\xb2\xe9\x17\xc1\xda\xa9\xf1;\xc0 J\xcc\xcb<r'
+# server lo server: b'\xbf\xcf\xc5\xfa\xf9^\xae)\x99\x91\xdf\x1aX\xe9a$'

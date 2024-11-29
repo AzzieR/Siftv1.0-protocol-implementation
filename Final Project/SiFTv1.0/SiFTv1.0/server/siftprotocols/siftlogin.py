@@ -1,14 +1,12 @@
-from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_OAEP
 import time, sys, os, getpass
+import traceback
+
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP, AES
 from Crypto.Hash import SHA256
-from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Protocol.KDF import PBKDF2, HKDF
 from siftprotocols.siftmtp import SiFT_MTP, SiFT_MTP_Error
 from Crypto.Random import get_random_bytes
-from Crypto.Cipher import AES
-from Crypto.Protocol.KDF import PBKDF2
-from collections import defaultdict
-import traceback
 
     
 class SiFT_LOGIN_Error(Exception):
@@ -84,11 +82,18 @@ class SiFT_LOGIN:
         # --------- STATE ------------
         self.mtp = mtp
         self.server_users = None 
+        self.server_random  = None
 
 
     # sets user passwords dictionary (to be used by the server)
     def set_server_users(self, users):
         self.server_users = users
+
+    def set_server_random(self, server_random):
+        self.server_random = server_random
+    
+    def get_server_random(self):
+        return self.server_random
 
 
     # builds a login request from a dictionary
@@ -112,8 +117,7 @@ class SiFT_LOGIN:
         login_req_struct['timestamp'] = login_req_fields[0]
         login_req_struct['username'] = login_req_fields[1]
         login_req_struct['password'] = login_req_fields[2]
-        login_req_struct['client_random'] = login_req_fields[3]
-        print(f"the login req struct: {login_req_struct}")
+        login_req_struct['client_random'] = login_req_fields[3] # here client random is a string
         return login_req_struct
 
 
@@ -150,19 +154,16 @@ class SiFT_LOGIN:
         print("entered the server's handling of login")
         # trying to receive a login request
         try:
-            msg_type, msg_sqn, msg_rnd, msg_payload, mac, etk = self.mtp.receive_msg() # add the new patameters
+            msg_type, msg_payload = self.mtp.receive_msg() # add the new patameters
 
             if msg_type != self.mtp.type_login_req:
                 raise SiFT_LOGIN_Error('Login request expected, but received something else')
-            
-            tk = decrypt_etk_with_private_key(etk)
-            self.mtp.set_session_key(tk)
-            decrypted_payload = decrypt_and_verify_payload(msg_payload, msg_rnd, msg_sqn, tk, mac)
-            login_req_struct = self.parse_login_req(decrypted_payload)
+        
+            login_req_struct = self.parse_login_req(msg_payload)
 
             # create a req hash on the decrypted message
             hash_fn = SHA256.new()
-            hash_fn.update(decrypted_payload)
+            hash_fn.update(msg_payload)
             request_hash = hash_fn.digest()
 
             if login_req_struct['username'] not in self.server_users:
@@ -174,8 +175,7 @@ class SiFT_LOGIN:
             received_timestamp = login_req_struct['timestamp']
             if not validate_timestamp(received_timestamp):
                 raise SiFT_LOGIN_Error('Timestamp validation failed: potential replay attack or clock mismatch')
-
-           
+ 
             server_random = get_random_bytes(16)
 
             login_res_struct = {
@@ -184,6 +184,7 @@ class SiFT_LOGIN:
             }
             msg_res_payload = self.build_login_res(login_res_struct)
             print(f"bfr enc: {msg_res_payload}")
+            self.set_server_random(server_random) # server_random here is simple bytes sequence
             # encrypt the messagge using AES in gcm mode
             self.mtp.send_msg(self.mtp.type_login_res, msg_res_payload)
 
@@ -196,6 +197,16 @@ class SiFT_LOGIN:
         # DEBUG 
         if self.DEBUG:
             print('User ' + login_req_struct['username'] + ' logged in')
+        print(f"the login req: {login_req_struct}")
+        # set the final session key
+        client_random = bytes.fromhex(login_req_struct['client_random'])
+        print(f"server lo client_ty: {type(client_random)}")
+        print(f'server lo server_ty: {type(server_random)}')
+        print(f"server lo client: {client_random}")
+        print(f'server lo server: {server_random}')
+        init_key_material = client_random + server_random
+        final_tk = HKDF(master=init_key_material, key_len=32, salt=request_hash, hashmod=SHA256)
+        self.mtp.set_session_key(final_tk)
         # DEBUG 
         return login_req_struct['username'] #### is it actually supposed to return this back?
 

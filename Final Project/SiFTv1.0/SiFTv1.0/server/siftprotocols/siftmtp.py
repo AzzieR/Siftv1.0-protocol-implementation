@@ -1,7 +1,7 @@
 #python3
 
 from os import urandom
-import socket
+import socket, getpass, sys
 
 #: Function that returns a random byte string of the desired size.
 get_random_bytes = urandom
@@ -10,11 +10,27 @@ from Crypto.Random import get_random_bytes
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Random import get_random_bytes
+
+def load_privatekey():
+    privkeyfile = input('Enter the full path to the private key file: ')
+    passphrase = getpass.getpass('Enter passphrase for private key: ')
+    with open(privkeyfile, 'rb') as f:
+        privkeystr = f.read()
+    try:
+        return RSA.import_key(privkeystr, passphrase=passphrase)
+    except ValueError as e:
+        print(f'Error: Cannot import private key from file {privkeyfile} : {e}')
+        sys.exit(1)
+    except Exception as e:
+        print(f'Unexpected error: {e}')
+        sys.exit(1)
+
 def encrypt_payload(payload, temp_key, rnd, sqn):
     # Create AES cipher in GCM mode
     cipher_aes = AES.new(temp_key, AES.MODE_GCM, nonce=rnd+sqn, mac_len=12)
     ciphertext, tag = cipher_aes.encrypt_and_digest(payload)
     return ciphertext, tag
+
 
 class SiFT_MTP_Error(Exception):
 
@@ -58,6 +74,7 @@ class SiFT_MTP:
 						  self.type_dnload_req, self.type_dnload_res_0, self.type_dnload_res_1)
 		# --------- STATE ------------
 		self.peer_socket = peer_socket
+		self.server_random = None
 		
 	def set_session_key(self, key):
 		self.session_key = key
@@ -70,8 +87,44 @@ class SiFT_MTP:
 	
 	def get_sequence_counter(self):
 		return self.sequence_counter
+	
+	def set_server_random(self, server_random):
+		self.server_random = server_random
+	
+	def get_server_random(self):
+		return self.server_random
+	
+	def decrypt_etk_with_private_key(self, encrypted_key):
+		# Load the server's private key
+		private_key = load_privatekey()
+		print(f"the private key: {private_key}")
+		# Decrypt the encrypted temporary key using RSA-OAEP
+		cipher_rsa = PKCS1_OAEP.new(private_key)
+		try:
+			decrypted_key = cipher_rsa.decrypt(encrypted_key)
+			return decrypted_key
+		except Exception as e:
+			print(f"Failed to decrypt ETK: {e}")
+			raise SiFT_MTP_Error("Failed to decrypt ETK")
 
+	def decrypt_and_verify_payload(self, payload, rnd, sqn, tk, mac):
+    # combine rnd and sqn to generate the nonce
+		nonce = rnd + sqn
 
+		# create AES cipher in GCM mode
+		cipher = AES.new(tk, AES.MODE_GCM, nonce=rnd+sqn, mac_len = 12)
+		try:
+			# decrypt and verify the mac
+			decrypted_payload = cipher.decrypt(payload)
+			
+			# Verify the MAC
+			cipher.verify(mac)
+			print(f'the dec payload: {decrypted_payload}')
+			print(f'the tk: {tk}')
+			return decrypted_payload
+		except ValueError as e:
+			print(f"the issue: {e}")
+			raise ValueError(f"MAC verification failed; {e}")
 	# parses a message header and returns a dictionary containing the header fields
 	def parse_msg_header(self, msg_hdr):
 		
@@ -140,13 +193,20 @@ class SiFT_MTP:
 		msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len - self.etk_size)
 		lth = len(msg_body)
 		mac = self.receive_bytes(msg_len - self.size_msg_hdr - lth - self.etk_size) # get mac
+		msg_rnd = parsed_msg_hdr['rnd']
+		msg_sqn = parsed_msg_hdr['sqn']
 		if msg_type == self.type_login_req:
 			try:
 				etk = self.receive_bytes(msg_len - self.size_msg_hdr - lth - self.msg_mac_len) # get the etk
-				
+				tk = self.decrypt_etk_with_private_key(etk)
+				self.set_session_key(tk)
 			except SiFT_MTP_Error as e:
 				raise SiFT_MTP_Error('Unable to receive message etk --> ' + e.err_msg)
-
+		
+		else:
+			tk = self.get_session_key()
+		decrypted_payload = self.decrypt_and_verify_payload(msg_body, msg_rnd, msg_sqn, tk, mac)
+		print(f"the dec payload from client: {decrypted_payload}")
 		# TODO: confirm verification checks
 		if self.DEBUG:
 			print('MTP message received (' + str(msg_len) + '):')
@@ -154,12 +214,8 @@ class SiFT_MTP:
 			print('BDY (' + str(len(msg_body)) + '): ')
 			print(msg_body.hex())
 			print('------------------------------------------')
-			# DEBUG 
-			if msg_type == self.type_login_req:
-				if len(msg_body) != msg_len - self.size_msg_hdr - self.etk_size - self.msg_mac_len:
-					raise SiFT_MTP_Error('Incomplete message body reveived')
-				return parsed_msg_hdr['typ'], parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd'], msg_body, mac, etk
-		return parsed_msg_hdr['typ'], parsed_msg_hdr['sqn'], parsed_msg_hdr['rnd'], msg_body, mac
+			# DEBUG	
+		return parsed_msg_hdr['typ'], decrypted_payload
 
 	# sends all bytes provided via the peer socket
 	def send_bytes(self, bytes_to_send):
