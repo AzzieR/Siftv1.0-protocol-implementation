@@ -207,6 +207,7 @@ class SiFT_MTP:
 		sqn = self.sequence_counter.to_bytes(self.size_msg_hdr_sqn, byteorder='big') # but confirm how we verify the sequence counter though.
 		self.set_sequence_counter()
 		rsv = b'\x00\x00'
+		print(f"the sqn: {sqn}")
 		if isLoginReq:
 			temp_key = get_random_bytes(32)
 			etk = encrypt_key_with_public_key(server_pubkey_path, temp_key)
@@ -215,6 +216,9 @@ class SiFT_MTP:
 		else:
 			temp_key = self.get_session_key()
 		ciphertext, mac = encrypt_payload(msg_payload, temp_key, rnd, sqn)
+		print(f"the temp key: {temp_key}")
+		print(f"the ciphertext: {ciphertext}")
+		print(f"the mac: {mac}")
 		msg_size += self.size_msg_hdr + len(ciphertext) + self.msg_mac_len 
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big') + sqn + rnd + rsv # the header is 16 bytes which looks good
 

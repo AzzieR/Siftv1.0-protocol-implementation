@@ -97,7 +97,6 @@ class SiFT_MTP:
 	def decrypt_etk_with_private_key(self, encrypted_key):
 		# Load the server's private key
 		private_key = load_privatekey()
-		print(f"the private key: {private_key}")
 		# Decrypt the encrypted temporary key using RSA-OAEP
 		cipher_rsa = PKCS1_OAEP.new(private_key)
 		try:
@@ -116,11 +115,8 @@ class SiFT_MTP:
 		try:
 			# decrypt and verify the mac
 			decrypted_payload = cipher.decrypt(payload)
-			
 			# Verify the MAC
 			cipher.verify(mac)
-			print(f'the dec payload: {decrypted_payload}')
-			print(f'the tk: {tk}')
 			return decrypted_payload
 		except ValueError as e:
 			print(f"the issue: {e}")
@@ -190,13 +186,13 @@ class SiFT_MTP:
 		# msg_len is the length of the entire msg including hdr, mac and tmp key
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
 		msg_type = parsed_msg_hdr['typ']
-		msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len - self.etk_size)
-		lth = len(msg_body)
-		mac = self.receive_bytes(msg_len - self.size_msg_hdr - lth - self.etk_size) # get mac
 		msg_rnd = parsed_msg_hdr['rnd']
 		msg_sqn = parsed_msg_hdr['sqn']
 		if msg_type == self.type_login_req:
 			try:
+				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len - self.etk_size)
+				lth = len(msg_body)
+				mac = self.receive_bytes(msg_len - self.size_msg_hdr - lth - self.etk_size) # get mac
 				etk = self.receive_bytes(msg_len - self.size_msg_hdr - lth - self.msg_mac_len) # get the etk
 				tk = self.decrypt_etk_with_private_key(etk)
 				self.set_session_key(tk)
@@ -204,7 +200,15 @@ class SiFT_MTP:
 				raise SiFT_MTP_Error('Unable to receive message etk --> ' + e.err_msg)
 		
 		else:
+			msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len)
+			lth = len(msg_body)
+			mac = self.receive_bytes(msg_len - self.size_msg_hdr - lth)
 			tk = self.get_session_key()
+		print(f"sqn: {msg_sqn}")
+		print(f"rnd: {msg_rnd}")
+		print(f"the temp key: {tk}")
+		print(f"the ciphertext: {msg_body}")
+		print(f"the mac: {mac}")
 		decrypted_payload = self.decrypt_and_verify_payload(msg_body, msg_rnd, msg_sqn, tk, mac)
 		print(f"the dec payload from client: {decrypted_payload}")
 		# TODO: confirm verification checks
