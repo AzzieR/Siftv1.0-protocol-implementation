@@ -60,6 +60,8 @@ class SiFT_MTP:
 		self.msg_mac_len = 12
 		self.etk_size = 256
 		self.sequence_counter = 1
+		##RAC added
+		self.last_received_sqn = 0  # Initialize last received sequence number
 
 		self.type_login_req =    b'\x00\x00'
 		self.type_login_res =    b'\x00\x10'
@@ -152,6 +154,17 @@ class SiFT_MTP:
 
 		if parsed_msg_hdr['typ'] not in self.msg_types:
 			raise SiFT_MTP_Error('Unknown message type found in message header')
+
+		##ADDED TO CHECK FOR ERROR OF SQN-----------------
+
+		current_sqn = int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big')  # Define current_sqn here
+		print(f"Received msg sequence number: {current_sqn}")
+		if current_sqn <= self.last_received_sqn:
+			raise SiFT_MTP_Error('Sequence number must be greater than the last received sequence number')
+
+		# Update the last received sequence number
+		self.last_received_sqn = current_sqn
+		# -------------------------------------------
 
 		# actual length of the message
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
