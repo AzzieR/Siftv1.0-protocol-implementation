@@ -180,7 +180,6 @@ class SiFT_MTP:
 		if parsed_msg_hdr['typ'] not in self.msg_types:
 			raise SiFT_MTP_Error('Unknown message type found in message header')
 		
-		##ADDED TO CHECK FOR ERROR OF SQN
 
 		current_sqn = int.from_bytes(parsed_msg_hdr['sqn'], byteorder='big')  # Define current_sqn here
 		print(f"Received msg sequence number: {current_sqn}")
@@ -189,12 +188,9 @@ class SiFT_MTP:
 
 		# Update the last received sequence number
 		self.last_received_sqn = current_sqn
-
 		# checks for  the sqn, rnd and rsv new fields added #TODO: Confirm with prof these checks are ok
 		if parsed_msg_hdr['rsv'] != b'\x00\x00':
 			raise SiFT_MTP_Error('Unknown Reserved field')
-		if len(parsed_msg_hdr['sqn']) != self.size_msg_hdr_sqn: # PROPER CHECK IS IF THE SEQUENCE IS UNIQUE
-			raise SiFT_MTP_Error('Invalid sequence number') # how should i check to make sure the sequence number is not repeated
 		if len(parsed_msg_hdr['rnd']) != self.size_msg_hdr_rnd:
 			raise SiFT_MTP_Error('Invalid random bytes')
 

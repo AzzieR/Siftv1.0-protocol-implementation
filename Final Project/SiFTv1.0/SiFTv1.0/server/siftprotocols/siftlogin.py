@@ -189,13 +189,12 @@ class SiFT_LOGIN:
             raise SiFT_LOGIN_Error('Login handling failed')
 
         # DEBUG 
-        if self.DEBUG:
+        if self.DEBUG: #TODO Take out?
             print('User ' + login_req_struct['username'] + ' logged in')
         # set the final session key
         client_random = bytes.fromhex(login_req_struct['client_random'])
         init_key_material = client_random + server_random
         final_tk = HKDF(master=init_key_material, key_len=32, salt=request_hash, hashmod=SHA256)
-        print(f'the final tk: {final_tk}')
         self.mtp.set_session_key(final_tk)
         # DEBUG 
         return login_req_struct['username'] #### is it actually supposed to return this back?

@@ -99,12 +99,10 @@ class SiFT_MTP:
 		return self.client_random
 	
 	def decrypt_payload(self, ciphertext, key, mac, sqn, rnd): # from server to client
-		print(f'the dec key: {key}')
 		nonce = rnd + sqn
 		cipher = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=self.msg_mac_len)
 		try:
 			decrypted = cipher.decrypt(ciphertext)
-			print(f"the decrypted: {decrypted}")
 			cipher.verify(mac)
 		except ValueError as e:
 			raise SiFT_MTP_Error(f'Failed to verify the MAC: {e}')
@@ -168,7 +166,6 @@ class SiFT_MTP:
 
 		# actual length of the message
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
-		isLoginRes = parsed_msg_hdr['typ'] == self.type_login_res
 
 		try:
 				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len)
@@ -181,18 +178,14 @@ class SiFT_MTP:
         # TODO: Decrypt this payload
 		msg_sqn = parsed_msg_hdr['sqn']
 		msg_rnd = parsed_msg_hdr['rnd']
-		# if isLoginRes:
 		decrypted_payload = self.decrypt_payload(msg_body, self.get_session_key(), mac, msg_sqn, msg_rnd)
-		print(f"the server's response: {decrypted_payload}")
 
 		# DEBUG 
 		if self.DEBUG:
 			print('MTP message received (' + str(msg_len) + '):')
 			print('HDR (' + str(len(msg_hdr)) + '): ' + msg_hdr.hex())
 			print('BDY (' + str(len(decrypted_payload)) + '): ')
-			print(decrypted_payload.hex)
 			if (mac):
-				print(f"Mac bytes: {mac}")
 				print('MAC (' + str(len(mac)) + '): ' + mac.hex())
 			print('------------------------------------------')
 		
@@ -220,7 +213,6 @@ class SiFT_MTP:
 		sqn = self.sequence_counter.to_bytes(self.size_msg_hdr_sqn, byteorder='big') # but confirm how we verify the sequence counter though.
 		self.set_sequence_counter()
 		rsv = b'\x00\x00'
-		print(f"the sqn: {sqn}")
 		if isLoginReq:
 			temp_key = get_random_bytes(32)
 			etk = encrypt_key_with_public_key(server_pubkey_path, temp_key)
@@ -229,9 +221,6 @@ class SiFT_MTP:
 		else:
 			temp_key = self.get_session_key()
 		ciphertext, mac = encrypt_payload(msg_payload, temp_key, rnd, sqn)
-		print(f"the temp key: {temp_key}")
-		print(f"the ciphertext: {ciphertext}")
-		print(f"the mac: {mac}")
 		msg_size += self.size_msg_hdr + len(ciphertext) + self.msg_mac_len 
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big') + sqn + rnd + rsv # the header is 16 bytes which looks good
 

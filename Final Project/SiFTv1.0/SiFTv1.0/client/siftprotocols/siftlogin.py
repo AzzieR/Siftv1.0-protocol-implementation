@@ -46,8 +46,6 @@ class SiFT_LOGIN:
         login_req_str += self.delimiter + login_req_struct['username']
         login_req_str += self.delimiter + login_req_struct['password'] 
         login_req_str += self.delimiter + client_random.hex() # make this a string since im concat strings
-        print(f"the login: {login_req_str}")
-        print(f"the login req encode: {login_req_str.encode(self.coding)}")
         return login_req_str.encode(self.coding)
 
 
@@ -70,7 +68,6 @@ class SiFT_LOGIN:
 
     # parses a login response into a dictionary
     def parse_login_res(self, login_res):
-        print(f"in parse: {login_res}")
         login_res_fields = login_res.decode(self.coding).split(self.delimiter)
         login_res_struct = {}
         login_res_struct['request_hash'] = bytes.fromhex(login_res_fields[0])
@@ -140,7 +137,7 @@ class SiFT_LOGIN:
         except SiFT_MTP_Error as e:
             raise SiFT_LOGIN_Error('Unable to send login response --> ' + e.err_msg)
 
-        # DEBUG 
+        # DEBUG TODO: Take out?
         if self.DEBUG:
             print('User ' + login_req_struct['username'] + ' logged in')
         # DEBUG 
@@ -155,7 +152,6 @@ class SiFT_LOGIN:
         login_req_struct['username'] = username
         login_req_struct['password'] = password
         msg_payload = self.build_login_req(login_req_struct)
-        print(f"the msg payload: {msg_payload}")
         # computing hash of request payload bfr enc
         hash_fn = SHA256.new()
         hash_fn.update(msg_payload)
@@ -175,7 +171,6 @@ class SiFT_LOGIN:
 
         # trying to receive a login response
         try:
-            # this is supposed to print something but nothing gets printed out
             msg_type, msg_payload = self.mtp.receive_msg()
  
             if msg_type != self.mtp.type_login_res:
@@ -196,26 +191,12 @@ class SiFT_LOGIN:
 
         # processing login response
         login_res_struct = self.parse_login_res(msg_payload)
-        print(f"the login_res_struct: {login_res_struct}")
-        print(f"the req has from the server: {login_res_struct['request_hash'].hex()}")
         if login_res_struct['request_hash'] != request_hash:
             raise SiFT_LOGIN_Error('Verification of login response failed')
         
         # now add the client_random and server_random to form the key
         client_random = self.get_client_random() # here it's a byte sequence
-        # print
         server_random = login_res_struct['server_random'] # here it's a byte sequence
-        print(f"client lo client_type: {type(client_random)}")
-        print(f"server lo client_type: {type(server_random)}")
-
-        print(f"client lo client: {client_random}")
-        print(f"server lo client: {server_random}")
         init_key_material = client_random + server_random
         final_tk = HKDF(master=init_key_material, key_len=32, salt=request_hash, hashmod=SHA256)
         self.mtp.set_session_key(final_tk)
-
-
-# client lo client: b'.\xb2\xe9\x17\xc1\xda\xa9\xf1;\xc0 J\xcc\xcb<r'
-# server lo client: b'\xbf\xcf\xc5\xfa\xf9^\xae)\x99\x91\xdf\x1aX\xe9a$'
-# server lo client: b'.\xb2\xe9\x17\xc1\xda\xa9\xf1;\xc0 J\xcc\xcb<r'
-# server lo server: b'\xbf\xcf\xc5\xfa\xf9^\xae)\x99\x91\xdf\x1aX\xe9a$'
