@@ -25,9 +25,10 @@ def load_privatekey():
         print(f'Unexpected error: {e}')
         sys.exit(1)
 
-def encrypt_payload(payload, temp_key, rnd, sqn):
+def encrypt_payload(hdr, payload, temp_key, nonce):
     # Create AES cipher in GCM mode
-    cipher_aes = AES.new(temp_key, AES.MODE_GCM, nonce=rnd+sqn, mac_len=12)
+    cipher_aes = AES.new(temp_key, AES.MODE_GCM, nonce=nonce, mac_len=12)
+    cipher_aes.update(hdr)
     ciphertext, tag = cipher_aes.encrypt_and_digest(payload)
     return ciphertext, tag
 
@@ -111,12 +112,12 @@ class SiFT_MTP:
 			print(f"Failed to decrypt ETK: {e}")
 			raise SiFT_MTP_Error("Failed to decrypt ETK")
 
-	def decrypt_and_verify_payload(self, payload, rnd, sqn, tk, mac):
+	def decrypt_and_verify_payload(self, hdr, payload, nonce, tk, mac):
     # combine rnd and sqn to generate the nonce
-		nonce = rnd + sqn
 
 		# create AES cipher in GCM mode
-		cipher = AES.new(tk, AES.MODE_GCM, nonce=rnd+sqn, mac_len = 12)
+		cipher = AES.new(tk, AES.MODE_GCM, nonce=nonce, mac_len = 12)
+		cipher.update(hdr)
 		try:
 			# decrypt and verify the mac
 			decrypted_payload = cipher.decrypt(payload)
@@ -217,10 +218,11 @@ class SiFT_MTP:
 			tk = self.get_session_key()
 		print(f"sqn: {msg_sqn}")
 		print(f"rnd: {msg_rnd}")
-		print(f"the temp key: {tk}")
+		print(f"the temp key: {tk.hex()}")
 		print(f"the ciphertext: {msg_body}")
-		print(f"the mac: {mac}")
-		decrypted_payload = self.decrypt_and_verify_payload(msg_body, msg_rnd, msg_sqn, tk, mac)
+		print(f"the mac: {mac.hex()}")
+		nonce = msg_sqn + msg_rnd
+		decrypted_payload = self.decrypt_and_verify_payload(msg_hdr, msg_body, nonce, tk, mac)
 		print(f"the dec payload from client: {decrypted_payload}")
 		# TODO: confirm verification checks
 		if self.DEBUG:
@@ -245,10 +247,12 @@ class SiFT_MTP:
 		rnd_server = get_random_bytes(self.size_msg_hdr_rnd)
 		sqn_server = (self.sequence_counter).to_bytes(self.size_msg_hdr_sqn, byteorder='big')
 		self.set_sequence_counter()
-		ciphertext, mac = encrypt_payload(msg_payload, self.get_session_key(), rnd_server, sqn_server)
-		msg_size = self.size_msg_hdr + len(ciphertext) + self.msg_mac_len # includes the len hdr, len epd and len mac
+		msg_size = self.size_msg_hdr + len(msg_payload) + self.msg_mac_len # includes the len hdr, len epd and len mac
 		msg_hdr_len = msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big')
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_hdr_len + sqn_server + rnd_server + self.rsv
+		nonce = sqn_server + rnd_server
+		ciphertext, mac = encrypt_payload(msg_hdr, msg_payload, self.get_session_key(), nonce)
+
 
 		# DEBUG 
 		if self.DEBUG:

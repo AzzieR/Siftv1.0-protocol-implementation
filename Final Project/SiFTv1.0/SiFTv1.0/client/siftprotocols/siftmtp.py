@@ -27,17 +27,21 @@ def load_publickey(pubkeyfile):
 
 """ Encryption of the server's public key with the random bytes temp key"""
 def encrypt_key_with_public_key(pubkeyfile, random_key):
-    public_key = load_publickey(pubkeyfile)
-    cipher = PKCS1_OAEP.new(public_key)
-    encrypted_key = cipher.encrypt(random_key)
-    return encrypted_key
+	print(f"rand key: {random_key.hex()}")
+	print(f"the new key: {pubkeyfile}")
+	public_key = load_publickey(pubkeyfile)
+	print(f"pub key: {pubkeyfile}")
+	cipher = PKCS1_OAEP.new(public_key)
+	encrypted_key = cipher.encrypt(random_key)
+	return encrypted_key
 
-def encrypt_payload(payload, temp_key, rnd, sqn):
-    cipher_aes = AES.new(temp_key, AES.MODE_GCM, nonce=rnd+sqn, mac_len=12)
+def encrypt_payload(hdr, payload, temp_key, nonce):
+    cipher_aes = AES.new(temp_key, AES.MODE_GCM, nonce, mac_len=12) #todo change nonce
+    cipher_aes.update(hdr)
     ciphertext, tag = cipher_aes.encrypt_and_digest(payload)
     return ciphertext, tag
 
-server_pubkey_path = os.path.join(os.path.dirname(__file__), '..', '..', 'server', 'server_pubkey.pem')
+server_pubkey_path = os.path.join(os.path.dirname(__file__), 'pub.txt')
 
 class SiFT_MTP:
 	def __init__(self, peer_socket):
@@ -98,12 +102,14 @@ class SiFT_MTP:
 	def get_client_random(self):
 		return self.client_random
 	
-	def decrypt_payload(self, ciphertext, key, mac, sqn, rnd): # from server to client
-		nonce = rnd + sqn
-		cipher = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=self.msg_mac_len)
+	def decrypt_payload(self, hdr, ciphertext, key, mac, nonce): # from server to client
+		print(f"the tk in decrypt: {key.hex()}")
+		cipher_aes = AES.new(key, AES.MODE_GCM, nonce=nonce, mac_len=self.msg_mac_len)
+		cipher_aes.update(hdr)
 		try:
-			decrypted = cipher.decrypt(ciphertext)
-			cipher.verify(mac)
+			decrypted = cipher_aes.decrypt(ciphertext)
+			print(f"the decrypted login resp: {decrypted}")
+			cipher_aes.verify(mac)
 		except ValueError as e:
 			raise SiFT_MTP_Error(f'Failed to verify the MAC: {e}')
 		return decrypted
@@ -168,17 +174,21 @@ class SiFT_MTP:
 		msg_len = int.from_bytes(parsed_msg_hdr['len'], byteorder='big')
 
 		try:
-				msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len)
-				lth = len(msg_body)
-				mac = self.receive_bytes(msg_len - self.size_msg_hdr - lth)
+			msg_body = self.receive_bytes(msg_len - self.size_msg_hdr - self.msg_mac_len)
+			lth = len(msg_body)
+			mac = self.receive_bytes(msg_len - self.size_msg_hdr - lth)
+			print(f"mac from server: {mac.hex()}")
+			print(f"msg_bdy: {msg_body.hex()}")
 		except SiFT_MTP_Error as e:
 			raise SiFT_MTP_Error('Unable to receive message body --> ' + e.err_msg)
 
-		            
+		print(f"the session key: {self.get_session_key().hex()}")         
         # TODO: Decrypt this payload
 		msg_sqn = parsed_msg_hdr['sqn']
 		msg_rnd = parsed_msg_hdr['rnd']
-		decrypted_payload = self.decrypt_payload(msg_body, self.get_session_key(), mac, msg_sqn, msg_rnd)
+		nonce = msg_sqn + msg_rnd
+		print(f"session key tmp: {self.get_session_key().hex()}")
+		decrypted_payload = self.decrypt_payload( msg_hdr, msg_body, self.get_session_key(), mac, nonce)
 
 		# DEBUG 
 		if self.DEBUG:
@@ -220,9 +230,10 @@ class SiFT_MTP:
 			msg_size = self.etk_size
 		else:
 			temp_key = self.get_session_key()
-		ciphertext, mac = encrypt_payload(msg_payload, temp_key, rnd, sqn)
 		msg_size += self.size_msg_hdr + len(ciphertext) + self.msg_mac_len 
 		msg_hdr = self.msg_hdr_ver + msg_type + msg_size.to_bytes(self.size_msg_hdr_len, byteorder='big') + sqn + rnd + rsv # the header is 16 bytes which looks good
+		nonce = sqn + rnd
+		ciphertext, mac = encrypt_payload(msg_hdr, msg_payload, temp_key, nonce)
 
 		# DEBUG 
 		if self.DEBUG:

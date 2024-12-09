@@ -39,7 +39,7 @@ class SiFT_LOGIN:
     # builds a login request from a dictionary including timestamp and client random
     def build_login_req(self, login_req_struct):
         # the time stamp and client random should be added here
-        time_stamp = int(time.time() * 1000)
+        time_stamp = time.time_ns() #TODO Update the timestamp on our own server
         client_random = get_random_bytes(16) # here client random is a simple byte sequence
         self.set_client_random(client_random)
         login_req_str = str(time_stamp)

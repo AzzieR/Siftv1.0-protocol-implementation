@@ -60,11 +60,12 @@ def decrypt_and_verify_payload(payload, rnd, sqn, tk, mac):
 seen_timestamps = set()
 
 # validates the freshness of the timestamp
-def validate_timestamp(received_timestamp, window=200):
-    current_time = int(time.time() * 1000)  # Milliseconds
-    window_ms = window * 1000
+# 20000000000
+def validate_timestamp(received_timestamp):
+    current_time = time.time_ns()  # Milliseconds
+    window_ns = 20000000000
     received_timestamp = int(received_timestamp)  # Convert to integer
-    if current_time - window_ms <= received_timestamp <= current_time + window_ms:
+    if current_time - window_ns <= received_timestamp <= current_time + window_ns:
         return True
     else:
         print(f"Timestamp outside the valid window: {received_timestamp} (current time: {current_time})")
